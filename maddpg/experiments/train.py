@@ -33,7 +33,7 @@ def parse_args():
 
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default='Test', help="name of the experiment")
-    parser.add_argument("--save-dir", type=str, default="../maddpg/policy/model_navigation.ckpt", help="directory in which training state and model should be saved")
+    parser.add_argument("--save-dir", type=str, default="../policy/model_navigation.ckpt", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
@@ -41,8 +41,8 @@ def parse_args():
     parser.add_argument("--display", action="store_true", default=True)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
-    parser.add_argument("--benchmark-dir", type=str, default="../maddpg/trainResult/", help="directory where benchmark data is saved")
-    parser.add_argument("--plots-dir", type=str, default="../maddpg/trainResult/", help="directory where plot data is saved")
+    parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
+    parser.add_argument("--plots-dir", type=str, default="../trainResult/", help="directory where plot data is saved")
     return parser.parse_args()
 
 def mlp_model(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None, is_training=True):
