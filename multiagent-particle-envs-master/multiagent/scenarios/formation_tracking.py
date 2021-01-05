@@ -23,7 +23,8 @@ class Scenario(BaseScenario):
         world.agents = [Agent() for _ in range(num_agents)]
         for i, agent in enumerate(world.agents):
             agent.name = 'agent %d' % i
-            agent.collide = True if i != 0 else False
+            # check if agent already collided
+            agent.collide = False
             agent.leader = True if i == 0 else False
             agent.silent = False #if i > 0 else False
             #agent.adversary = True if i < num_adversaries else False
