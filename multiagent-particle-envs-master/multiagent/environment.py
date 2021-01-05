@@ -361,7 +361,7 @@ class MultiAgentEnv(gym.Env):
                 label = rendering.make_text(text='%d' % e, font_size=12, x=agent.state.p_pos[0], y=agent.state.p_pos[1], color=(0, 0, 0, 255))
                 self.viewers[i].add_label(label)
                 if e > 0:
-                    err = rendering.make_text(text='error of agent %d = %f meters' % (e, agent.err), font_size=15,
+                    err = rendering.make_text(text='error of agent %d = %f meters' % (e, np.linalg.norm(agent.err)), font_size=15,
                                               x=self.world.agents[0].state.p_pos[0] - WINDOW_W // 1.5,
                                               y=self.world.agents[0].state.p_pos[1] - WINDOW_H // 2.0 - 20 * (e + 1),
                                               anchor_x='left',

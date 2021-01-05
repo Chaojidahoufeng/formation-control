@@ -35,7 +35,8 @@ class Scenario(BaseScenario):
             agent.color = np.array([0., 1, 0.45]) if not agent.leader else np.array([1.0, 1.0, 0.0])
             agent.crash = 0  # calculate how many time the agent crashed
             agent.ray = np.zeros((num_agent_ray, 2))  # num_agent_ray*[dis, ang, type]
-            agent.lam = 1
+            agent.ang_range = {'L1': np.pi/2 - 2 * np.pi / 8 - 2 * np.pi / 10, 'L2': np.pi/2 - 2 * np.pi / 8 - 1 * np.pi / 10, 'L3': np.pi/2 - 2 * np.pi / 8, 'L4': np.pi/2 - 1 * np.pi / 8, 'L5': np.pi/2,
+                         'R1': -np.pi/2 + 2 * np.pi / 8 + 2 * np.pi / 10, 'R2': -np.pi/2 + 2 * np.pi / 8 + 1 * np.pi / 10, 'R3': -np.pi/2 + 2 * np.pi / 8, 'R4': -np.pi/2 + 1 * np.pi / 8, 'R5': -np.pi/2}
         world.static_obs = [Static_obs() for _ in range(num_static_obs)]
         for i, static_obs in enumerate(world.static_obs):
             static_obs.name = 'static_obs %d' % i
@@ -137,7 +138,7 @@ class Scenario(BaseScenario):
                 agent.ang2goal_prev = None
 
 
-            agent.err = 0.0
+            agent.err = np.zeros(2)
             agent.err_prev = 0.0
             #agent.dis2goal = norm(agent.state.p_pos - world.goal - agent.p_des) / 100
             #agent.ang2goal = math.atan2(agent.state.p_pos[1] - world.goal[1] - agent.p_des[1], agent.state.p_pos[0] - world.goal[0] - agent.p_des[0])
@@ -187,12 +188,12 @@ class Scenario(BaseScenario):
         return ang
 
     def set_agent_ray(self, agent, dis2obs=None, ang2obs=None, obs_type=None):
-        ang_range = [0, np.pi/4, np.pi/10, np.pi/10, np.pi/10, np.pi/10, np.pi/10, np.pi/4]
+        ang_range = list(agent.ang_range.items())
         ray_ang = -np.pi / 2
         for i in range(len(agent.ray)):
-            ray_ang = self.wrap2pi(ray_ang + ang_range[i])
+            #ray_ang = self.wrap2pi(ray_ang + ang_range[i])
             agent.ray[i][0] = 3
-            agent.ray[i][1] = ray_ang
+            agent.ray[i][1] = self.wrap2pi(ang_range[i][1])
             #agent.ray[i][2] = 0
             if ang2obs:
                 for j in range(len(ang2obs)):
@@ -202,21 +203,16 @@ class Scenario(BaseScenario):
                         #agent.ray[i][1] = agent.state.p_pos + dis2obs[i] * np.array([math.cos(ray_ang), math.sin(ray_ang)])
 
     # collision detect
-    def is_collision(self, entity1, entity2):
-        delta_pos = entity1.state.p_pos - entity2.state.p_pos
-        if (entity1.state.p_pos[0] - entity2.state.p_pos[0]) != 0:
-            ang = math.atan((entity1.state.p_pos[1] - entity2.state.p_pos[1]) / (
-                        entity1.state.p_pos[0] - entity2.state.p_pos[0]))
+    def is_collision(self, center, target):
+        delta_pos = center.state.p_pos - target.state.p_pos
+        if (center.state.p_pos[0] - target.state.p_pos[0]) != 0:
+            ang = math.atan((center.state.p_pos[1] - target.state.p_pos[1]) / (
+                        center.state.p_pos[0] - target.state.p_pos[0]))
         else:
             ang = np.pi / 2
         dist = norm(delta_pos)/100
-        dist_min = (entity1.size + entity2.size)*math.cos(abs(ang)-np.pi/4)/100
-        if dist < dist_min:
-            if 'agent' in entity1.name and not entity1.leader:
-                entity1.crash += 1
-            if 'agent' in entity2.name and not entity1.leader:
-                entity2.crash += 1
-        return True if dist < dist_min else False
+        dist_min = (center.size + target.size)*math.cos(abs(ang)-np.pi/4)/100
+        return dist < dist_min
 
     # return all agents that are not adversaries
     def follower_agents(self, world):
@@ -281,44 +277,40 @@ class Scenario(BaseScenario):
         # parameters for collision reward
         alpha = 5
         beta = 2
-        agent_idx = int(agent.name[-1])
-        agents = self.follower_agents(world)
+        agents = self.follower_agents(world) + self.leader_agents(world)
         static_obs = self.get_static_obstacles(world)
         dynamic_obs = self.get_dynamic_obstacles(world)
-        obs = static_obs + dynamic_obs
+        obs = agents + static_obs + dynamic_obs
         # penalty of collision with agents
-        if agent.collide:
-            for i, a in enumerate(agents):
-                if not a.name == agent.name:
-                    if self.is_collision(agent, a):
-                        rew -= 5
-
-            # compute the reward due to distance and angle to obstacles
-            for o in obs:
+        for i, o in enumerate(obs):
+            if o != agent:
                 if self.is_collision(agent, o):
-                    rew -= 5
-            # min of all ray's detect result
-            idx = 0
-            for i in range(len(agent.ray)):
-                if agent.ray[i][0] < agent.ray[idx][0]:
-                    idx = i
+                    rew -=5
+                    if not agent.collide:
+                        agent.crash += 1
+                        agent.collide = True
+                    break
+            if i == len(obs) - 1:
+                agent.collide = False
+        # min of all ray's detect result
+        obs_dis = []
+        for i in range(len(agent.ray)):
+            obs_dis.append(agent.ray[i][0])
+        agt_dis = []
+        agt_ang = []
+        for entity in world.agents:
+            if entity != agent:
+                dis2agt = np.array([min(norm(entity.state.p_pos - agent.state.p_pos) / 100, 50 * agent.size / 100)])
+                ang = self.get_relAngle(agent, entity)
+                agt_dis.append(dis2agt)
+                agt_ang.append(np.array([ang]))
 
-            rew -= alpha * math.exp(-beta * agent.ray[idx][0])
+        rew -= alpha * math.exp(-beta * min(min(obs_dis), min(agt_dis)))
 
         # reward for formation
         # based on err/t
-        c = 2
-        rew -= c*(50*(agent.err - agent.err_prev))
-
-        '''def bound(x):
-            if x < 4:
-                return 0.0
-            if x < 5:
-                return np.exp(beta*(x-5.0))
-
-        for p in range(world.dim_p):
-            x = abs(agent.state.p_pos[p])
-            rew -= alpha * bound(x)'''
+        c = 1
+        rew -= c*norm(agent.err)
 
         #print(rew)
 
@@ -338,12 +330,11 @@ class Scenario(BaseScenario):
         for o in obs:
             if self.is_collision(agent, o):
                 rew -= 5
-        idx = 0
+        obs_dis = []
         for i in range(len(agent.ray)):
-            if agent.ray[i][0] < agent.ray[idx][0]:
-                idx = i
+            obs_dis.append(agent.ray[i][0])
 
-        rew -= alpha * math.exp(-beta * agent.ray[idx][0])
+        rew -= alpha * math.exp(-beta * min(obs_dis))
         # leader's task is to navigate toward the goal
         sigma = 100
         rew -= sigma*(leader.dis2goal - leader.dis2goal_prev)*abs(np.cos(leader.ang2goal))
@@ -473,13 +464,12 @@ class Scenario(BaseScenario):
             ang.append(np.array([agent.ang2goal / np.pi]))
         vel.append(np.array([norm(agent.state.p_vel)/100]))
         omg.append(np.array([agent.state.p_omg / np.pi]))
-        err = [np.array([agent.err]), np.array([agent.err_prev])]
+        err = [np.array([agent.err[i]]) for i in range(len(agent.err))]
         if agent.leader:
-            #return np.concatenate([np.array([100*(agent.dis2goal - agent.dis2goal_prev)])] + ang + vel + omg + agt_dis + agt_ang + sensor_ray)
-            return np.concatenate([np.array(
-                [100 * (agent.dis2goal - agent.dis2goal_prev)])] + ang + vel + omg + sensor_ray)
+            return np.concatenate([np.array([100*(agent.dis2goal - agent.dis2goal_prev)])] + ang + vel + omg + agt_dis + agt_ang + sensor_ray)
+            #return np.concatenate([np.array([100 * (agent.dis2goal - agent.dis2goal_prev)])] + ang + vel + omg + sensor_ray)
         else:
-            return np.concatenate([np.array([agent.dis2leader - agent.d_des])] + ang + vel + omg + sensor_ray)
+            return np.concatenate([np.array([agent.dis2leader - agent.d_des])] + ang + vel + omg + agt_dis + agt_ang + sensor_ray)
             #return np.concatenate([np.array([100*(agent.err - agent.err_prev)])] + ang + vel + omg + sensor_ray)
 
     def constraint(self, agent, world):

@@ -122,12 +122,8 @@ class CDDPGAgentTrainer(AgentTrainer):
         self.get_bound()
         self.lam = np.zeros((1, self.con_space))
         obs_ph_n = []
-        if self.leader:
-            for i in range(self.n):
-                obs_ph_n.append(U.BatchInput(obs_shape_n[i], name="observation" + str(i)).get())
-        else:
-            obs_ph_n.append(U.BatchInput(obs_shape_n[1], name="observation" + str(0)).get())
-            act_space_n = [act_space_n[1]]
+        obs_ph_n.append(U.BatchInput(obs_shape_n[1], name="observation" + str(0)).get())
+        act_space_n = [act_space_n[1]]
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
         self.act_space_num = int(act_pdtype_n[0].param_shape()[0])
 
@@ -223,59 +219,32 @@ class CDDPGAgentTrainer(AgentTrainer):
         obs_n = []
         obs_next_n = []
         act_n = []
-        con_n = []
         index = self.replay_sample_index
-        rew = []
-        done = []
         #obs, act, rew, obs_next, done = self.replay_buffer.sample_index(index)
         # train q network
         num_sample = 1
-        if self.leader:
-            for i in range(self.n):
-                obs, act, con, rew, obs_next, done = trainer[i].replay_buffer.sample_index(index)
-                obs_n.append(obs)
-                obs_next_n.append(obs_next)
-                act_n.append(act)
-                con_n.append(con)
-            obs, act, con, rew, obs_next, done = self.replay_buffer.sample_index(index)
-            target_q = 0.0
-            for j in range(num_sample):
-                target_act_next_n = [trainer[0].p_debug['target_act'](obs_next_n[0])]
-                for i in range(1, self.n):
-                    target_act_next_n.append(trainer[-1].p_debug['target_act'](obs_next_n[i]))
+        obs, act, con, rew, obs_next, done = self.replay_buffer.sample_index(index)
+        obs_n.append(obs)
+        obs_next_n.append(obs_next)
+        act_n.append(act)
+        target_q = 0.0
 
-                target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
-                target_q += rew - np.sum(self.lam * con, axis=1) + self.args.gamma * (1.0 - done) * target_q_next
-            target_q /= num_sample
-            q_loss = self.q_train(*(obs_n + act_n + [target_q]))
-            # train p network
-            p_loss = self.p_train(*(obs_n + act_n))
-            self.p_update()
-            self.q_update()
-        else:
-            obs, act, con, rew, obs_next, done = trainer[-1].replay_buffer.sample_index(index)
-            obs_n.append(obs)
-            obs_next_n.append(obs_next)
-            act_n.append(act)
-            target_q = 0.0
+        for j in range(num_sample):
+            target_act_next_n = [self.p_debug['target_act'](obs_next_n[0])]
+            target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
+            target_q += rew - np.sum(self.lam * con, axis=1) + self.args.gamma * (1.0 - done) * target_q_next
+        target_q /= num_sample
+        q_loss = self.q_train(*(obs_n + act_n + [target_q]))
+        # train p network
+        p_loss = self.p_train(*(obs_n + act_n))
 
-            for j in range(num_sample):
-                target_act_next_n = [trainer[-1].p_debug['target_act'](obs_next_n[0])]
-                target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
-                target_q += rew - np.sum(self.lam * con, axis=1) + self.args.gamma * (1.0 - done) * target_q_next
-            target_q /= num_sample
-            q_loss = self.q_train(*(obs_n + act_n + [target_q]))
-            # train p network
-            p_loss = self.p_train(*(obs_n + act_n))
-            
-            self.p_update()
-            self.q_update()
-            '''
-            if t % 1000 == 0:
-                self.update_lambda(con)
-            '''
-            if t % 10000 == 0:
-                print("steps:{} q loss:{} p loss:{} lambda:{}".format(t, q_loss, p_loss, self.lam))
+        self.p_update()
+        self.q_update()
+        
+        if t % 1000 == 0 and not self.leader:
+            self.update_lambda(con)
+        if t % 10000 == 0 and not self.leader:
+            print("steps:{} q loss:{} p loss:{} lambda:{}".format(t, q_loss, p_loss, self.lam))
             
         #print(q_loss,p_loss)
         return [q_loss, p_loss, np.mean(target_q), np.mean(rew), np.mean(target_q_next), np.std(target_q)]

@@ -15,10 +15,10 @@ def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
     parser.add_argument("--scenario", type=str, default="formation_tracking", help="name of the scenario script")
-    parser.add_argument("--max-episode-len", type=int, default=2500, help="maximum episode length")
+    parser.add_argument("--max-episode-lxen", type=int, default=250, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
-    parser.add_argument("--good-policy", type=str, default="cddpg", help="policy for good agents")
+    parser.add_argument("--good-policy", type=str, default="ddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
     # Core training parameters
     parser.add_argument("--lr", type=float, default=1e-3, help="learning rate for Adam optimizer")
@@ -38,7 +38,7 @@ def parse_args():
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
-    parser.add_argument("--display", action="store_true", default=True)
+    parser.add_argument("--display", action="store_true", default=False)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
@@ -129,6 +129,14 @@ def mlp_model(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=Non
             #out = tf.matmul(out, out, transpose_b=True)
         return out
 
+def constraint_model(input, num_outputs, scope, reuse=False, num_units=64):
+    with tf.variable_scope(scope, reuse=reuse):
+        out = input
+        out = layers.fully_connected(out, num_outputs=num_units, activation_fn=tf.nn.relu)
+        out = layers.fully_connected(out, num_outputs=num_units * 2, activation_fn=tf.nn.relu)
+        out = layers.fully_connected(out, num_outputs=num_outputs, activation_fn=None)
+        return out
+
 def lstm_model(obs, trajectory_size, num_inputs, num_outputs, scope, reuse=False, num_units=300, rnn_cell=None):
 
     obs = tf.reshape(obs, [-1, trajectory_size, num_inputs])
@@ -187,7 +195,7 @@ def get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist):
                                     local_q_func=(arglist.adv_policy == 'ddpg')))
         elif arglist.good_policy=="cddpg":
             trainer = CDDPGAgentTrainer
-            for i in range(env.n+1):
+            for i in range(2):
                 # the last trainer is for saving all followers' transitions
                 trainers.append(trainer("agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist))
         else:
@@ -200,6 +208,18 @@ def get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist):
                 trainers.append(trainer(
                     "agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist,
                     local_q_func=(arglist.good_policy=='ddpg')))
+
+    else:
+        model = lstm_model
+        trainer = MARDPGAgentTrainer
+        for i in range(num_adversaries):
+            trainers.append(trainer(
+                "agent_%d" % i, model, his_shape_n, env.action_space, i, arglist,
+                local_q_func=(arglist.adv_policy == 'ddpg')))
+        for i in range(num_adversaries, env.n):
+            trainers.append(trainer(
+                "agent_%d" % i, model, his_shape_n, env.action_space, i, arglist,
+                local_q_func=(arglist.good_policy == 'ddpg')))
     return trainers
 
 
@@ -216,12 +236,14 @@ def train(arglist):
         else:
             obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
             his_shape_n = [((env.observation_space[i].shape[0]+3)*arglist.trajectory_size,) for i in range(env.n)]
+        con_shape_n = [env.constraint_space[0].shape] #2020/02/20
         num_adversaries = min(env.n, arglist.num_adversaries)
         episode_step = [0]
         final_ep_steps = []
         episode_done = [0]
         final_ep_done = []
         train_step = 0
+        is_training = True
         trainers = get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist)
         #vl = [v for v in tf.global_variables() if "Adam" not in v.name]
         #saver = tf.train.Saver(var_list=vl)
@@ -248,6 +270,18 @@ def train(arglist):
         agent_info = [[[]]]  # placeholder for benchmarking info
 
         obs_n = env.reset()
+        '''def his_padding(his):
+            his = np.concatenate((his, np.zeros(475-len(his))))
+            return his
+        action_pre = [np.array(np.random.uniform(0,1,3))] * env.n # an initial action value for episode step = 0
+        his_pre = [] * env.n
+        for i in range(env.n):
+            his_pre.append(np.concatenate((action_pre[i], obs_n[i])))
+        his_n_a = [] * env.n
+        his_n_c = [] * env.n
+        for i in range(env.n):
+            his_n_a.append(his_pre[i])
+            his_n_c.append(his_pre[i])'''
         t_start = time.time()
         final_reward_prev = None
         print('Starting iterations...')
@@ -258,8 +292,8 @@ def train(arglist):
                 if arglist.good_policy == "maddpg":
                     action_n = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
                 elif arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
-                    action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
-                    constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
+                    action_n = [trainers[obs != 0].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
+                    constraint_n = [trainers[obs != 0].constraint(obs_n[obs]) for obs in range(len(obs_n))]
                 # environment step
                 new_obs_n, rew_n, done_n, info_n, crash_n = env.step(action_n)
                 episode_step[-1] += 1
@@ -271,10 +305,7 @@ def train(arglist):
                         trainers[i!=0].experience(obs_n[i], action_n[i], rew_n[i] - constraint_n[i], new_obs_n[i], done_n[i], terminal)
                 elif arglist.good_policy == "cddpg":
                     for i in range(len(obs_n)):
-                        trainers[i].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
-                        if i > 0:
-                            trainers[-1].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i],
-                                                   done_n[i], terminal)
+                        trainers[i!=0].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
                 else:
                     for i, agent in enumerate(trainers):
                         agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
@@ -295,6 +326,54 @@ def train(arglist):
                     episode_rewards.append(0)
                     episode_crash.append(0)
                     episode_done.append(0)
+                    for a in agent_rewards:
+                        a.append(0)
+                    agent_info.append([[]])
+            else:
+                # get action
+                action_n = [agent.action(his_padding(his)) for agent, his in zip(trainers, his_n_a)]
+                # environment step
+                new_obs_n, rew_n, done_n, info_n = env.step(action_n)
+                episode_step += 1
+                done = all(done_n)
+                terminal = (episode_step >= arglist.max_episode_len)
+                # collect experience
+                new_his_n = [] * env.n
+                for i, agent in enumerate(trainers):
+                    # his_t = [his_t-1, obs_t, action_t]
+                    '''if episode_step > arglist.trajectory_size-1:
+                        new_his_n[i][0:len(his_n_a[i])-len(his_n_a[i])//arglist.trajectory_size] = his_n_a[i][len(his_n_a[i])//arglist.trajectory_size:]
+                        new_his_n[i][len(his_n_a[i])-len(his_n_a[i])//arglist.trajectory_size:] = np.concatenate((new_obs_n[i], action_n[i]))[:]
+                    else:
+                        new_his_n[i][len(his_n_a[i]) // arglist.trajectory_size*episode_step:len(his_n_a[i]) // arglist.trajectory_size*(episode_step+1)] = np.concatenate(
+                            (new_obs_n[i], action_n[i]))[:]'''
+                    new_his_n.append(np.concatenate((his_n_a[i], np.concatenate((action_n[i], new_obs_n[i])))))
+                    if len(new_his_n[i]) > arglist.trajectory_size*19:
+                        new_his_n[i] = new_his_n[i][19:]
+                    # store transition [h_t-1. a_t, r_t, h_t] into replay buffer
+                    agent.experience(his_padding(his_n_c[i]), action_n[i], rew_n[i], his_padding(new_his_n[i]), done_n[i], terminal)
+                his_n_a = new_his_n
+                his_n_c = new_his_n
+                '''his_n_c[:][0:-1 - 2] = his_n_a[:][3:]
+                his_n_c[:][-1 - 2:] = action_n[:][:]'''
+                for i, rew in enumerate(rew_n):
+                    episode_rewards[-1] += rew
+                    agent_rewards[i][-1] += rew
+
+                if done or terminal:
+                    obs_n = env.reset()
+                    action_pre = [np.array(
+                        np.random.uniform(0, 1, 3))] * env.n  # an initial action value for episode step = 0
+                    his_pre = [] * env.n
+                    for i in range(env.n):
+                        his_pre.append(np.concatenate((action_pre[i], obs_n[i])))
+                    his_n_a = [] * env.n
+                    his_n_c = [] * env.n
+                    for i in range(env.n):
+                        his_n_a.append(his_padding(his_pre[i]))
+                        his_n_c.append(his_padding(his_pre[i]))
+                    episode_step = 0
+                    episode_rewards.append(0)
                     for a in agent_rewards:
                         a.append(0)
                     agent_info.append([[]])
@@ -322,11 +401,12 @@ def train(arglist):
                     break'''
                 continue
 
+            # update all trainers, if not in display or benchmark mode
+            for agent in trainers:
+                agent.preupdate()
             if arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
                 for i in range(len(obs_n)):
-                    # update all trainers, if not in display or benchmark mode
-                    trainers[i if i == 0 else -1].preupdate()
-                    loss = trainers[i if i == 0 else -1].update(trainers, train_step)
+                    loss = trainers[i!=0].update(trainers, train_step)
             else:
                 for agent in trainers:
                     loss = agent.update(trainers, train_step)

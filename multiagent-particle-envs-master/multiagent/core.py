@@ -166,7 +166,8 @@ class World(object):
         for agent in self.agents:
             if not agent.leader:
                 agent.err_prev = agent.err
-                agent.err = np.linalg.norm(agent.p_des-agent.p_rel)
+                #agent.err = np.linalg.norm(agent.p_des-agent.p_rel)
+                agent.err = agent.p_des - agent.p_rel
 
 
         # set actions for scripted agents 
@@ -233,10 +234,6 @@ class World(object):
             entity.state.p_ang_prev = entity.state.p_ang
             entity.state.p_pos += entity.state.p_vel * self.dt
             entity.state.p_ang -= entity.state.p_omg * self.dt
-            '''if entity.state.p_ang < 0:
-                entity.state.p_ang += 2 * np.pi
-            elif entity.state.p_ang >= 2 * np.pi:
-                entity.state.p_ang -= 2 * np.pi'''
             if abs(entity.state.p_ang) >= np.pi:
                 entity.state.p_ang -= np.sign(entity.state.p_ang) *2 * np.pi
 
