@@ -18,13 +18,12 @@ class Scenario(BaseScenario):
         num_agents = num_leader_agent + num_follower_agents
         num_static_obs = 3
         num_landmarks = 1# tracking center and side barrier indicators
-        num_agent_ray = 8
+        num_agent_ray = 60
         # add agents
         world.agents = [Agent() for _ in range(num_agents)]
         for i, agent in enumerate(world.agents):
             agent.name = 'agent %d' % i
-            # check if agent already collided
-            agent.collide = False
+            agent.collide = False if i == 0 else True
             agent.leader = True if i == 0 else False
             agent.silent = False #if i > 0 else False
             #agent.adversary = True if i < num_adversaries else False
@@ -36,8 +35,9 @@ class Scenario(BaseScenario):
             agent.color = np.array([0., 1, 0.45]) if not agent.leader else np.array([1.0, 1.0, 0.0])
             agent.crash = 0  # calculate how many time the agent crashed
             agent.ray = np.zeros((num_agent_ray, 2))  # num_agent_ray*[dis, ang, type]
-            agent.ang_range = {'L1': np.pi/2 - 2 * np.pi / 8 - 2 * np.pi / 10, 'L2': np.pi/2 - 2 * np.pi / 8 - 1 * np.pi / 10, 'L3': np.pi/2 - 2 * np.pi / 8, 'L4': np.pi/2 - 1 * np.pi / 8, 'L5': np.pi/2,
-                         'R1': -np.pi/2 + 2 * np.pi / 8 + 2 * np.pi / 10, 'R2': -np.pi/2 + 2 * np.pi / 8 + 1 * np.pi / 10, 'R3': -np.pi/2 + 2 * np.pi / 8, 'R4': -np.pi/2 + 1 * np.pi / 8, 'R5': -np.pi/2}
+            agent.ang_range = [180/num_agent_ray*(i + 0.5) * np.pi / 180 for i in range(num_agent_ray//2)] + [-180/num_agent_ray*(i + 0.5) * np.pi / 180 for i in range(num_agent_ray//2)]
+            agent.obs_dis = 2.0
+            agent.obs_ang = 0.0
         world.static_obs = [Static_obs() for _ in range(num_static_obs)]
         for i, static_obs in enumerate(world.static_obs):
             static_obs.name = 'static_obs %d' % i
@@ -97,9 +97,7 @@ class Scenario(BaseScenario):
         # add Path
         path_type = 'line'
         world.start = agents_ctr
-        world.goal = agents_ctr + 10000 * np.random.uniform(-1, 1, world.dim_p)
-        while norm(world.goal-world.start)/100 < 7:
-            world.goal = agents_ctr + 10000*np.random.uniform(-1, 1, world.dim_p)
+        world.goal = agents_ctr + 10000 * np.array([0, 1])
         #world.path = self.set_path(path_type, world.start)
 
         #world.station_num = len(world.path)
@@ -147,7 +145,7 @@ class Scenario(BaseScenario):
             #agent.ang2goal_prev = None
             agent.state.p_pos += np.array([2*np.random.uniform(-10, 10), 2*np.random.uniform(-10, 10)])
             agent.state.p_ang += np.random.uniform(-np.pi/6,np.pi/6)
-            self.set_agent_ray(agent, obs_type='obs')
+            self.set_agent_ray(agent)
 
         for i, dynamic_obs in enumerate(world.dynamic_obs):
             dynamic_obs.name = 'dynamic_obs %d' % i
@@ -161,8 +159,10 @@ class Scenario(BaseScenario):
 
         for s in world.static_obs:
             s.state.p_pos = np.array([np.random.uniform(-400, 400), np.random.uniform(-400, 400)])
-            while norm(s.state.p_pos-agents_ctr)/100 < 2 or norm(s.state.p_pos-world.goal)/100 < 2:
+            min_agt_dis = np.min([norm(s.state.p_pos - a.state.p_pos) / 100 for a in world.agents])
+            while min_agt_dis < 1 or norm(s.state.p_pos - world.goal) / 100 < 2:
                 s.state.p_pos = np.array([np.random.uniform(-400, 400), np.random.uniform(-400, 400)])
+                min_agt_dis = np.min([norm(s.state.p_pos - a.state.p_pos) / 100 for a in world.agents])
         for i,landmark in enumerate(world.landmarks):
             if landmark.center:
                 landmark.state.p_pos = world.goal
@@ -188,20 +188,23 @@ class Scenario(BaseScenario):
             ang -= np.sign(ang) * 2 * np.pi
         return ang
 
-    def set_agent_ray(self, agent, dis2obs=None, ang2obs=None, obs_type=None):
-        ang_range = list(agent.ang_range.items())
-        ray_ang = -np.pi / 2
+    def set_agent_ray(self, agent, dis2obs=None, ang2obs=None, obs_size=None):
+        ang_range = agent.ang_range
         for i in range(len(agent.ray)):
-            #ray_ang = self.wrap2pi(ray_ang + ang_range[i])
-            agent.ray[i][0] = 3
-            agent.ray[i][1] = self.wrap2pi(ang_range[i][1])
-            #agent.ray[i][2] = 0
+            # ray_ang = self.wrap2pi(ray_ang + ang_range[i])
+            agent.ray[i][0] = 2
+            agent.ray[i][1] = self.wrap2pi(ang_range[i])
+            # agent.ray[i][2] = 0
             if ang2obs:
                 for j in range(len(ang2obs)):
-                    if abs(self.wrap2pi(ang2obs[j] - agent.ray[i][1])) < np.pi/len(agent.ray)/2 and dis2obs[j] < agent.ray[i][0]:
-                        agent.ray[i][0] = abs(dis2obs[j])
-                        #agent.ray[i][2] = ('obs' in obs_type[j])  # 0 for agent and empty and 1 for obstacle
-                        #agent.ray[i][1] = agent.state.p_pos + dis2obs[i] * np.array([math.cos(ray_ang), math.sin(ray_ang)])
+                    delt_ang2obs = abs(self.wrap2pi(ang2obs[j] - agent.ray[i][1]))
+                    max_delt_ang2obs = abs(np.tan(obs_size[j] / (obs_size[j] + dis2obs[j])))
+                    delt_dis2obs = delt_ang2obs / max_delt_ang2obs * obs_size[j]
+                    # max_dis2obs = norm([obs_size[j], obs_size[j] + dis2obs[j]])
+                    sense_dis = abs(dis2obs[j] + delt_dis2obs) + np.random.normal(0.0, 0.2)
+                    # todo: modify the detect condition
+                    if delt_ang2obs < max_delt_ang2obs and sense_dis < agent.ray[i][0]:
+                        agent.ray[i][0] = max(sense_dis, 1e-6)
 
     # collision detect
     def is_collision(self, center, target):
@@ -276,38 +279,28 @@ class Scenario(BaseScenario):
         rew = 0
 
         # parameters for collision reward
-        alpha = 5
-        beta = 2
+        alpha = 1
+        beta = 3
         agents = self.follower_agents(world) + self.leader_agents(world)
         static_obs = self.get_static_obstacles(world)
         dynamic_obs = self.get_dynamic_obstacles(world)
         obs = agents + static_obs + dynamic_obs
         # penalty of collision with agents
+        '''
         for i, o in enumerate(obs):
             if o != agent:
                 if self.is_collision(agent, o):
-                    rew -=5
+                    #rew -=5
                     if not agent.collide:
                         agent.crash += 1
                         agent.collide = True
                     break
             if i == len(obs) - 1:
                 agent.collide = False
-        # min of all ray's detect result
-        obs_dis = []
-        for i in range(len(agent.ray)):
-            obs_dis.append(agent.ray[i][0])
-        agt_dis = []
-        agt_ang = []
-        for entity in world.agents:
-            if entity != agent:
-                dis2agt = np.array([min(norm(entity.state.p_pos - agent.state.p_pos) / 100, 50 * agent.size / 100)])
-                ang = self.get_relAngle(agent, entity)
-                agt_dis.append(dis2agt)
-                agt_ang.append(np.array([ang]))
-
-        rew -= alpha * math.exp(-beta * min(min(obs_dis), min(agt_dis)))
-
+        '''
+        #rew -= alpha * math.exp(-beta * min(min(obs_dis), min(agt_dis)))
+        if agent.obs_dis < 3 * agent.size / 100:
+            rew -= alpha * (1/max(agent.obs_dis, agent.size/100) - 1/(3 * agent.size / 100))
         # reward for formation
         # based on err/t
         c = 1
@@ -411,6 +404,8 @@ class Scenario(BaseScenario):
             agent.p_rel = agent.dis2leader * np.array([math.cos(agent.ang2leader), math.sin(agent.ang2leader)])
 
         # get distance and relative angle of all entities in this agent's reference frame
+        agt_dis = []
+        agt_ang = []
         obs_dis = []
         obs_ang = []
         obs_size = []
@@ -421,24 +416,27 @@ class Scenario(BaseScenario):
                 entity.state.p_vel[0] = min(0.3, max(0.1,
                                                      entity.state.p_vel[0] + 0.01 * np.random.choice([0, 1], size=1,
                                                                                                      p=[.97, .03])))
-            dis2obs = (norm(entity.state.p_pos - p_pos)-entity.size)/100
+            dis2obs = (norm(entity.state.p_pos - p_pos) - entity.size - agent.size)/100
             ang = self.get_relAngle(agent, entity)
-            if dis2obs < 25*agent.size/100 and entity != agent:
+            if dis2obs < 25*agent.size/100:
                 obs_dis.append(dis2obs)
                 obs_ang.append(ang)
                 obs_size.append(entity.size/100)
                 obs_type.append(entity.name)
-        self.set_agent_ray(agent, obs_dis, obs_ang, obs_type)
-        sensor_ray = [np.array([agent.ray[i][j]]) for i in range(len(agent.ray)) for j in range(len(agent.ray[i]))]
-
-        '''agt_dis = []
-        agt_ang = []
-        for entity in world.agents:
-            if not entity.leader and entity != agent:
+            if 'agent' in entity.name and entity != agent:
                 dis2agt = np.array([min(norm(entity.state.p_pos - p_pos)/100, 50*agent.size/100)])
-                ang = self.get_relAngle(agent, entity)
                 agt_dis.append(dis2agt)
-                agt_ang.append(np.array([ang]))'''
+                agt_ang.append(np.array([ang]))
+        self.set_agent_ray(agent, obs_dis, obs_ang, obs_size)
+        # min of all ray's detect result
+        agent.obs_dis = 2.0
+        agent.obs_ang = 0.0
+        for i in range(len(agent.ray)):
+            if agent.ray[i][0] < obs_dis:
+                agent.obs_dis = agent.ray[i][0]
+                agent.obs_ang = agent.ray[i][1]
+        if agent.obs_dis < 1e-3:
+            agent.crash += 1
         # communication of all other agents, now assume the communication graph is fully connected
         comm = []
         other_pos = []
@@ -467,10 +465,10 @@ class Scenario(BaseScenario):
         omg.append(np.array([agent.state.p_omg / np.pi]))
         err = [np.array([agent.err[i]]) for i in range(len(agent.err))]
         if agent.leader:
-            return np.concatenate([np.array([100*(agent.dis2goal - agent.dis2goal_prev)])] + ang + vel + omg + agt_dis + agt_ang + sensor_ray)
+            return np.concatenate([np.array([100*(agent.dis2goal - agent.dis2goal_prev)])] + ang + vel + omg + agt_dis + [np.array([obs_dis])] + [np.array([obs_ang])])
             #return np.concatenate([np.array([100 * (agent.dis2goal - agent.dis2goal_prev)])] + ang + vel + omg + sensor_ray)
         else:
-            return np.concatenate([np.array([agent.dis2leader - agent.d_des])] + ang + vel + omg + agt_dis + agt_ang + sensor_ray)
+            return np.concatenate(err + vel + omg + agt_dis + agt_ang + [np.array([obs_dis])] + [np.array([obs_ang])])
             #return np.concatenate([np.array([100*(agent.err - agent.err_prev)])] + ang + vel + omg + sensor_ray)
 
     def constraint(self, agent, world):
