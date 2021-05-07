@@ -5,8 +5,11 @@ from numpy.linalg import norm
 from multiagent.core import World, Agent, Landmark, Static_obs, Dynamic_obs
 from multiagent.scenario import BaseScenario
 
+import MDS
+
 class Scenario(BaseScenario):
-    def make_world(self):
+    def make_world(self, arglist):
+        self.args = arglist
         #rendering unit is in centimeter
         world = World()
         # set any world properties first
@@ -14,18 +17,28 @@ class Scenario(BaseScenario):
         #world.damping = 1
 
         num_follower_agents = 4
-        num_leader_agent = 1
+        num_leader_agent = 0
         num_agents = num_leader_agent + num_follower_agents
-        num_static_obs = 5
+        num_static_obs = 0
         num_landmarks = 1# tracking center and side barrier indicators
         num_agent_ray = 60
         # add agents
         world.agents = [Agent() for _ in range(num_agents)]
+
+        # ideal formation topo side length
+        world.ideal_side_len = 15
+        # calculate the ideal formation topo
+        world.ideal_topo_point = [[],[]]
+        for i in range(num_follower_agents):
+            world.ideal_topo_point[0].append(world.ideal_side_len*np.cos(i/num_follower_agents*2*np.pi))
+            world.ideal_topo_point[1].append(world.ideal_side_len*np.sin(i/num_follower_agents*2*np.pi))
+
+
         for i, agent in enumerate(world.agents):
             agent.name = 'agent %d' % i
             # check if agent already collided
-            agent.collide = False if i == 0 else True
-            agent.leader = True if i == 0 else False
+            agent.collide = True
+            agent.leader = False
             agent.silent = False #if i > 0 else False
             #agent.adversary = True if i < num_adversaries else False
             agent.boundary = False
@@ -109,7 +122,7 @@ class Scenario(BaseScenario):
         # add Path
         path_type = 'line'
         world.start = agents_ctr
-        world.goal = agents_ctr + 10000 * np.array([0, 1])
+        world.goal = agents_ctr + 1000 * np.array([1, 1]) #set the boundary range from 0,0 to 1000,1000
         #world.path = self.set_path(path_type, world.start)
 
         #world.station_num = len(world.path)
@@ -127,21 +140,26 @@ class Scenario(BaseScenario):
             if agent.leader:
                 agent.state.p_pos = agents_ctr
             else:
-                ang = world.agents[0].state.p_ang+(e-1)*2*np.pi/(len(world.agents)-1)
-                agent.state.p_pos = agent.agents_ctr + 15*agent.size*np.array([math.cos(ang), math.sin(ang)])
-
+                agent.state.p_pos = np.random.rand(2) * self.args.agent_init_bound # randomly initialize position range from (0,0) to (100, 100)
+            
+            #TODO: 这里到底需要计算什么东西
             if not agent.leader:
-                agent.dis2leader = norm(agent.state.p_pos - agents_ctr)/100
-                agent.ang2leader = self.get_relAngle(world.agents[0], agent)
+                agent.dis2leader = None
+                agent.ang2leader = None
                 agent.dis2leader_prev = None
                 agent.ang2leader_prev = None
                 # initialize the desire relative position of agents in the formation
-                agent.d_des = agent.dis2leader
-                agent.w_des = agent.ang2leader
-                agent.p_des = agent.d_des * np.array([math.cos(agent.w_des), math.sin(agent.w_des)])
-                agent.p_rel = agent.dis2leader * np.array([math.cos(agent.ang2leader), math.sin(agent.ang2leader)])
+                agent.d_des = None # desired distance
+                agent.w_des = None # desired w (angle)
+                agent.p_des = None # desired position
+                agent.p_rel = None # desired 
                 agent.his = [] # initialize leader history
                 agent.P = np.eye(4) # initialize follower predict variance
+                agent.dis2goal = norm(agent.state.p_pos - world.goal) / 100 # meters (m)
+                agent.ang2goal = math.atan2(world.goal[1]-agent.state.p_pos[1],
+                                              world.goal[0]-agent.state.p_pos[0]) - agent.state.p_ang
+                agent.dis2goal_prev = agent.dis2goal
+                agent.ang2goal_prev = agent.ang2goal
             else:
                 agent.dis2goal = norm(agent.state.p_pos - world.goal) / 100
                 agent.ang2goal = math.atan2(world.goal[1]-agent.state.p_pos[1],
@@ -155,9 +173,9 @@ class Scenario(BaseScenario):
             #agent.ang2goal = math.atan2(agent.state.p_pos[1] - world.goal[1] - agent.p_des[1], agent.state.p_pos[0] - world.goal[0] - agent.p_des[0])
             #agent.dis2goal_prev = None
             #agent.ang2goal_prev = None
-            if e > 0:
-                agent.state.p_pos += np.array([2*np.random.uniform(-10, 10), 2*np.random.uniform(-10, 10)])
-                agent.state.p_ang += np.random.uniform(-np.pi/6,np.pi/6)
+            # if e > 0:
+            #     agent.state.p_pos += np.array([2*np.random.uniform(-10, 10), 2*np.random.uniform(-10, 10)])
+            #     agent.state.p_ang += np.random.uniform(-np.pi/6,np.pi/6)
             self.set_agent_ray(agent)
 
         for i, dynamic_obs in enumerate(world.dynamic_obs):
@@ -172,10 +190,10 @@ class Scenario(BaseScenario):
 
         for s in world.static_obs:
             s.size = np.random.uniform(10.0, 50.0)
-            s.state.p_pos = np.array([np.random.uniform(-600, 600), np.random.uniform(-600, 600)])
+            s.state.p_pos = np.array([np.random.uniform(100, 1000), np.random.uniform(100, 1000)])
             min_agt_dis = np.min([norm(s.state.p_pos-a.state.p_pos)/100 for a in world.agents])
             while min_agt_dis < 1 or norm(s.state.p_pos-world.goal)/100 < 2:
-                s.state.p_pos = np.array([np.random.uniform(-600, 600), np.random.uniform(-600, 600)])
+                s.state.p_pos = np.array([np.random.uniform(100, 1000), np.random.uniform(100, 1000)])
                 min_agt_dis = np.min([norm(s.state.p_pos - a.state.p_pos) / 100 for a in world.agents])
         for i,landmark in enumerate(world.landmarks):
             if landmark.center:
@@ -248,6 +266,10 @@ class Scenario(BaseScenario):
     # return all dynamic obstacles
     def get_dynamic_obstacles(self, world):
         return [dynamic_obs for dynamic_obs in world.dynamic_obs]
+    
+    # return all landmarks
+    def get_landmarks(self, world):
+        return [landmark for landmark in world.landmarks]
 
     # return current state of formation center
     def get_formation_center(self, world):
@@ -256,22 +278,23 @@ class Scenario(BaseScenario):
     def reward(self, agent, world):
         # Agents are rewarded based on minimum agent distance to each landmark
         #boundary_reward = -10 if self.outside_boundary(agent) else 0
-        main_reward = self.leader_reward(agent, world) if agent.leader else self.agent_reward(agent, world)
+        main_reward = self.dis2goal_reward(agent, world)
+        #main_reward = self.leader_reward(agent, world) if agent.leader else self.agent_reward(agent, world)
         return main_reward
 
     def outside_boundary(self, entity):
         # 20190711 restrict the agents in the frame
-        if entity.state.p_pos[0] + entity.size > 5:
-            entity.state.p_pos[0] = 5 - entity.size
+        if entity.state.p_pos[0] + entity.size > self.args.map_max_size:
+            entity.state.p_pos[0] = self.args.map_max_size - entity.size
             #return True
-        if entity.state.p_pos[0] - entity.size < -5:
-            entity.state.p_pos[0] = -5 + entity.size
+        if entity.state.p_pos[0] - entity.size < 0:
+            entity.state.p_pos[0] = 0 + entity.size
             #return True
-        if entity.state.p_pos[1] + entity.size > 5:
-            entity.state.p_pos[1] = 5 - entity.size
+        if entity.state.p_pos[1] + entity.size > self.args.map_max_size:
+            entity.state.p_pos[1] = self.args.map_max_size - entity.size
             #return True
-        if entity.state.p_pos[1] - entity.size < -5:
-            entity.state.p_pos[1] = -5 + entity.size
+        if entity.state.p_pos[1] - entity.size < 0:
+            entity.state.p_pos[1] = 0 + entity.size
             #return True
         #return False
 
@@ -471,6 +494,7 @@ class Scenario(BaseScenario):
         #print("error: ", err, "obs dis: ", obs_dis)
         return err
 
+
     def agent_reward(self, agent, world):
         # 20190711
         # Agents are rewarded based on
@@ -537,6 +561,34 @@ class Scenario(BaseScenario):
         #print(rew)
         return -formation_err, -agent.stream_err
 
+
+    def dis2goal_reward(self, agent, world):
+        # Agents are rewarded based on the distance between itself and the navigation goal
+        # TODO: to change the reward alpha and beta
+        # TODO: 相对定位坐标
+        rew = 0
+        alpha = 1
+        beta = 1
+        gamma = 1
+        dis2goal = norm(agent.state.p_pos - world.landmarks[0].state.p_pos) / 100 # cm->m
+        navigation_reward = - alpha * (dis2goal - agent.dis2goal_prev)
+        avoidance_reward = - beta * np.sum(agent.crash)
+        
+        pos_rel = [[0.0],[0.0]] # real relative position
+
+        for other in world.agents:
+            if other == agent: continue
+            pos_rel[0].append(other.state.p_pos[0] - agent.state.p_pos[0])
+            pos_rel[1].append(other.state.p_pos[1] - agent.state.p_pos[1])
+        
+        topo_err = MDS.error_rel_g(np.array(world.ideal_topo_point), np.array(pos_rel), len(world.agents))
+        formation_reward = - gamma * topo_err
+        # ideal topo: [-15,0] [0,15] [15,0] [0,-15]
+        # pos_rel = [0,0] [9,6] [-15,4] [12,7]
+        #formation_reward = 
+        return navigation_reward, avoidance_reward, formation_reward
+
+
     def leader_reward(self, agent, world):
         # Agent are rewarded based on minimum agent distance to landmark
         rew = -0.3
@@ -562,7 +614,7 @@ class Scenario(BaseScenario):
         rew -= alpha * math.exp(-beta * min(min(min_obs_dis), min_agt_dis))
         # leader's task is to navigate toward the goal
         sigma = 100
-        rew -= sigma*(leader.dis2goal - leader.dis2goal_prev)*abs(np.cos(leader.ang2goal))
+        rew -= sigma*(leader.dis2goal - leader.dis2goal_prev)
         return rew, 0.
 
     def kalman_filter(self, world, agent):
@@ -618,18 +670,23 @@ class Scenario(BaseScenario):
 
     def observation(self, agent, world):
         # update desire center position
+        self.outside_boundary(agent)
         p_pos = agent.state.p_pos
+
 
         if agent.leader:
             agent.dis2goal_prev = agent.dis2goal
             agent.dis2goal = norm(p_pos - world.landmarks[0].state.p_pos) / 100
             agent.ang2goal = self.get_relAngle(agent, world.landmarks[0])
         else:
-            leader = self.leader_agents(world)
-            agent.dis2leader_prev = agent.dis2leader
-            agent.dis2leader = norm(p_pos - leader[0].state.p_pos) / 100
-            agent.ang2leader = self.get_relAngle(leader[0], agent)
-            agent.p_rel = agent.dis2leader * np.array([math.cos(agent.ang2leader), math.sin(agent.ang2leader)])
+            # leader = self.leader_agents(world) # None
+            # agent.dis2leader_prev = None
+            # agent.dis2leader = None
+            # agent.ang2leader = None
+            # agent.p_rel = None
+            agent.dis2goal_prev = agent.dis2goal
+            agent.dis2goal = norm(p_pos - world.landmarks[0].state.p_pos) / 100
+            agent.ang2goal = self.get_relAngle(agent, world.landmarks[0])
         # get distance and relative angle of all entities in this agent's reference frame
         agt_dis = []
         agt_ang = []
@@ -640,12 +697,14 @@ class Scenario(BaseScenario):
         collide = []
         obs = world.agents + world.static_obs + world.dynamic_obs
         for entity in obs:
-            if entity is not agent:
-                collide.append(self.is_collision(agent, entity))
+            if entity == agent:
+                continue
+            collide.append(self.is_collision(agent, entity))
             dis2obs = (norm(entity.state.p_pos - p_pos) - entity.size - agent.size)/100
             ang = self.get_relAngle(agent, entity)
             if 'agent' in entity.name and entity != agent:
-                dis2agt = np.array([min(norm(entity.state.p_pos - p_pos)/100, 50*agent.size/100)])
+                # TODO: 这个地方怎么设计比较好（目前的做法是设计了一个最大通信距离）
+                dis2agt = np.array([min(norm(entity.state.p_pos - p_pos - agent.size - entity.size)/100, 50*agent.size/100)])
                 ang = self.get_relAngle(agent, entity)
                 agt_dis.append(dis2agt)
                 agt_ang.append(np.array([ang]))
@@ -658,6 +717,9 @@ class Scenario(BaseScenario):
                 obs_type.append(entity.name)
         if True in collide:
             agent.crash += 1
+
+        target_dis = [np.array([norm(world.landmarks[0].state.p_pos - p_pos)])]
+        target_ang = [np.array([self.get_relAngle(agent, world.landmarks[0])])]
         self.set_agent_ray(agent, obs_dis, obs_ang, obs_size)
         #sensor_ray = [np.array([agent.ray[i][j]]) for i in range(len(agent.ray)) for j in range(len(agent.ray[i]))]
         if not agent.leader:
@@ -685,26 +747,21 @@ class Scenario(BaseScenario):
 
         vel = []
         omg = []
-        ang = []
-        if not agent.leader:
-            ang.append(np.array([self.wrap2pi(agent.ang2leader-agent.w_des) / np.pi]))
-        else:
-            ang.append(np.array([agent.ang2goal / np.pi]))
+        # ang = []
+        # if not agent.leader:
+        #     ang.append(np.array([self.wrap2pi(agent.ang2leader-agent.w_des) / np.pi]))
+        # else:
+        #     ang.append(np.array([agent.ang2goal / np.pi]))
         vel.append(np.array([norm(agent.state.p_vel)/100]))
         omg.append(np.array([agent.state.p_omg / np.pi]))
-        err = [np.array([agent.err[i]]) for i in range(len(agent.err))]
-        if agent.leader:
-            return np.concatenate([np.array([100*(agent.dis2goal - agent.dis2goal_prev)])] + ang + vel + omg + agt_dis + agt_ang)
-            #return np.concatenate([np.array([100 * (agent.dis2goal - agent.dis2goal_prev)])] + ang + vel + omg + sensor_ray)
-        else:
-            #return np.concatenate([np.array([agent.dis2leader - agent.d_des])] + ang + vel + omg + agt_dis + agt_ang + sensor_ray)
-            return np.concatenate(err + vel + omg + agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r)
+        err = [np.array([agent.err[i]]) for i in range(len(agent.err))] 
+
+        #return np.concatenate([np.array([agent.dis2leader - agent.d_des])] + ang + vel + omg + agt_dis + agt_ang + sensor_ray)
+        return np.concatenate(err + vel + omg + agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r + target_dis + target_ang)
 
     def constraint(self, agent, world):
         return []
 
     def done(self, agent, world):
         #return not np.any(world.err > 2e-2)
-        return world.agents[0].dis2goal < 5e-1
-
-
+        return np.min([world.agents[i].dis2goal for i in range(len(world.agents))]) < 5e-1

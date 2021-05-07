@@ -156,18 +156,18 @@ class World(object):
         #self.landmarks[0].state.p_pos[0] += dis_x
         #self.landmarks[0].state.p_pos[1] += dis_y
         self.distance += dis / 100  # transfer to meter
-        for obs in self.static_obs:
-            if abs(self.agents[0].state.p_pos[0] - obs.state.p_pos[0]) >= 700:
-                obs.state.p_pos[0] += np.sign(self.agents[0].state.p_pos[0] - obs.state.p_pos[0])*1200
-                obs.state.p_pos[1] = self.agents[0].state.p_pos[1] + 50 * np.random.randint(-10, 10)
-            elif abs(self.agents[0].state.p_pos[1] - obs.state.p_pos[1]) >= 700:
-                obs.state.p_pos[0] = self.agents[0].state.p_pos[0] + 50 * np.random.randint(-10, 10)
-                obs.state.p_pos[1] += np.sign(self.agents[0].state.p_pos[1] - obs.state.p_pos[1])*1200
+        # for obs in self.static_obs:
+        #     if abs(self.agents[0].state.p_pos[0] - obs.state.p_pos[0]) >= 700:
+        #         obs.state.p_pos[0] += np.sign(self.agßents[0].state.p_pos[0] - obs.state.p_pos[0])*1200
+        #         obs.state.p_pos[1] = self.agents[0].state.p_pos[1] + 50 * np.random.randint(-10, 10)
+        #     elif abs(self.agents[0].state.p_pos[1] - obs.state.p_pos[1]) >= 700:
+        #         obs.state.p_pos[0] = self.agents[0].state.p_pos[0] + 50 * np.random.randint(-10, 10)
+        #         obs.state.p_pos[1] += np.sign(self.agents[0].state.p_pos[1] - obs.state.p_pos[1])*1200
         for agent in self.agents:
             if not agent.leader:
                 agent.err_prev = agent.err
                 #agent.err = np.linalg.norm(agent.p_des-agent.p_rel)
-                agent.err = agent.p_des - agent.p_rel
+                agent.err = [0.0, 0.0]
 
 
         # set actions for scripted agents 

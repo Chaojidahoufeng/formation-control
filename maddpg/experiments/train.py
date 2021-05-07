@@ -3,6 +3,7 @@ import numpy as np
 import tensorflow as tf
 import time
 import pickle
+from matplotlib import pyplot as plt
 
 import maddpg.common.tf_util as U
 from maddpg.trainer.maddpg import MADDPGAgentTrainer
@@ -11,14 +12,16 @@ from maddpg.trainer.cddpg import CDDPGAgentTrainer
 from maddpg.trainer.dqn import DQNAgentTrainer
 import tensorflow.contrib.layers as layers
 
+
+
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="formation_tracking", help="name of the scenario script")
+    parser.add_argument("--scenario", type=str, default="rel_based_formation_stream_avoidance_4", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=250, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=30000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
-    parser.add_argument("--good-policy", type=str, default="ddpg", help="policy for good agents")
+    parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
     # Core training parameters
     parser.add_argument("--lr", type=float, default=1e-3, help="learning rate for Adam optimizer")
@@ -43,6 +46,10 @@ def parse_args():
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
     parser.add_argument("--plots-dir", type=str, default="../trainResult/", help="directory where plot data is saved")
+
+    # world setting
+    parser.add_argument("--map-max-size", type=int, default=1200)
+    parser.add_argument("--agent-init-bound", type=int, default=200)
     return parser.parse_args()
 
 def mlp_model(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None, is_training=True):
@@ -164,7 +171,7 @@ def make_env(scenario_name, arglist, benchmark=False):
     # load scenario from script
     scenario = scenarios.load(scenario_name + ".py").Scenario()
     # create world
-    world = scenario.make_world()
+    world = scenario.make_world(arglist)
     # create multiagent environment
     if benchmark:
         env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation, scenario.constraint, scenario.benchmark_data)
@@ -202,8 +209,36 @@ def get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist):
                     local_q_func=(arglist.good_policy=='ddpg')))
     return trainers
 
+def render_rel_position(figure, ax, agent_idx, obs):
+    agt_dis = obs[4:7]
+    agt_ang = obs[7:10]
+    agent_0_pos = [0.,0.]
+    other_agent_pos = [ [agt_dis[i]*np.cos(agt_ang[i]), agt_dis[i]*np.sin(agt_ang[i])] for i in range(len(agt_dis)) ]
+
+    ax[agent_idx].set_title("Agent-"+str(agent_idx), family='sans-serif',
+                    fontname='Helvetica',
+                    fontsize=20)
+    for _, pos in enumerate(other_agent_pos):
+        ax[agent_idx].scatter(pos[0], pos[1], color='r')
+
+    ax[agent_idx].scatter(agent_0_pos[0], agent_0_pos[1], color='g')
+
+    for _ in range(len(ax)):
+        plt.tight_layout()
+
+    plt.gcf().canvas.flush_events()
+    figure.canvas.start_event_loop(0.001)
+    plt.gcf().canvas.flush_events()
+
+
 
 def train(arglist):
+    # rendering setting
+    if arglist.display:
+        plt.ion()
+        figure, ax = plt.subplots(1, 4, figsize=(4*4, 4),
+                                                    facecolor="whitesmoke",
+                                                    num="Thread")
     #tf.reset_default_graph()
     with U.single_threaded_session():
         tf.set_random_seed(0)
@@ -235,7 +270,7 @@ def train(arglist):
         # Load previous results, if necessary
         if arglist.load_dir == "":
             arglist.load_dir = arglist.save_dir
-        if arglist.display or arglist.restore or arglist.benchmark:
+        if arglist.restore or arglist.benchmark:
             print('Loading previous state...')
             U.load_state(arglist.load_dir, saver)
 
@@ -265,14 +300,16 @@ def train(arglist):
                     action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
                     constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
                 # environment step
-                new_obs_n, rew_n, done_n, info_n, crash_n = env.step(action_n)
+                new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, done_n, info_n, crash_n = env.step(action_n)
+
+                rew_n = [navigation_reward_n[i]+avoidance_reward_n[i]+formation_reward_n[i] for i in range(len(navigation_reward_n))]
                 episode_step[-1] += 1
                 done = all(done_n)
                 terminal = (episode_step[-1] >= arglist.max_episode_len)
                 # collect experience
                 if arglist.good_policy == "ddpg":
                     for i in range(len(obs_n)):
-                        trainers[i!=0].experience(obs_n[i], action_n[i], rew_n[i] - constraint_n[i][0], new_obs_n[i], done_n[i], terminal)
+                        trainers[i!=0].experience(obs_n[i], action_n[i], rew_n[i] - constraint_n[i], new_obs_n[i], done_n[i], terminal)
                 elif arglist.good_policy == "cddpg":
                     for i in range(len(obs_n)):
                         trainers[i].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
@@ -285,14 +322,13 @@ def train(arglist):
                 obs_n = new_obs_n
                 for i, rew in enumerate(rew_n):
                     # ignore leader reward
-                    if i > 0:
-                        episode_rewards[-1] += rew
-                        agent_rewards[i][-1] += rew
+                    episode_rewards[-1] += rew
+                    agent_rewards[i][-1] += rew
 
-                for i, con in enumerate(constraint_n):
-                    if i > 0:
-                        episode_constraints[-1] += con[0]
-                        agent_constraints[i][-1] += con[0]
+                # for i, con in enumerate(constraint_n):
+                #     if i > 0:
+                #         episode_constraints[-1] += con[0]
+                #         agent_constraints[i][-1] += con[0]
 
                 for i, crash in enumerate(crash_n):
                     episode_crash[-1] += crash
@@ -330,9 +366,19 @@ def train(arglist):
             if arglist.display:
                 time.sleep(0.01)
                 env.render()
+
+
+                for i in range(len(trainers)):
+                    ax[i].clear()
+                    # ax[i].set_yticks([])
+                    # ax[i].set_xticks([])
+                    # ax[i].set_yticklabels([])
+                    # ax[i].set_xticklabels([])
+                for i in range(len(trainers)):
+                    render_rel_position(figure, ax, i, obs_n[i])
                 '''if train_step == 10:
                     break'''
-                continue
+                # continue
 
             if arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
                 for i in range(len(obs_n)):
