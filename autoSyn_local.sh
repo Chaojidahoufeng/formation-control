@@ -2,6 +2,5 @@
 git status
 git add *  
 git commit -m 'add some code from Mac'
-# git commit -m 'add some results from Server'
-git pull --rebase origin yuzi   #domnload data
-git push origin yuzi           #upload data
+git pull --rebase origin reedpan   #download data
+git push origin reedpan           #upload data
