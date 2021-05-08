@@ -291,104 +291,107 @@ def train(arglist):
         final_reward_prev = None
         print('Starting iterations...')
 
-        while True:
-            if arglist.network == "MLP":
-                # get action
-                if arglist.good_policy == "maddpg":
-                    action_n = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
-                elif arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
-                    action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
-                    constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
-                # environment step
-                new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, done_n, info_n, crash_n = env.step(action_n)
+        for episode in range(10000):
+            done = False
+            terminal = (episode_step[-1] >= arglist.max_episode_len)
+            while not (terminal or done):
+                if arglist.network == "MLP":
+                    # get action
+                    if arglist.good_policy == "maddpg":
+                        action_n = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
+                    elif arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
+                        action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
+                        constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
+                    # environment step
+                    new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, done_n, info_n, crash_n = env.step(action_n)
 
-                rew_n = [navigation_reward_n[i]+avoidance_reward_n[i]+formation_reward_n[i] for i in range(len(navigation_reward_n))]
-                episode_step[-1] += 1
-                done = all(done_n)
-                terminal = (episode_step[-1] >= arglist.max_episode_len)
-                # collect experience
-                if arglist.good_policy == "ddpg":
+                    rew_n = [navigation_reward_n[i]+avoidance_reward_n[i]+formation_reward_n[i] for i in range(len(navigation_reward_n))]
+                    episode_step[-1] += 1
+                    done = all(done_n)
+                    terminal = (episode_step[-1] >= arglist.max_episode_len)
+                    # collect experience
+                    if arglist.good_policy == "ddpg":
+                        for i in range(len(obs_n)):
+                            trainers[i!=0].experience(obs_n[i], action_n[i], rew_n[i] - constraint_n[i], new_obs_n[i], done_n[i], terminal)
+                    elif arglist.good_policy == "cddpg":
+                        for i in range(len(obs_n)):
+                            trainers[i].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
+                            if i > 0:
+                                trainers[-1].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i],
+                                                    done_n[i], terminal)
+                    else:
+                        for i, agent in enumerate(trainers):
+                            agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
+                    obs_n = new_obs_n
+                    for i, rew in enumerate(rew_n):
+                        # ignore leader reward
+                        episode_rewards[-1] += rew
+                        agent_rewards[i][-1] += rew
+
+                    # for i, con in enumerate(constraint_n):
+                    #     if i > 0:
+                    #         episode_constraints[-1] += con[0]
+                    #         agent_constraints[i][-1] += con[0]
+
+                    for i, crash in enumerate(crash_n):
+                        episode_crash[-1] += crash
+
+                    for i, done in enumerate(done_n):
+                        episode_done[-1] += done
+
+                    if done or terminal:
+                        obs_n = env.reset()
+                        episode_step.append(0)
+                        episode_rewards.append(0)
+                        episode_constraints.append(0)
+                        episode_crash.append(0)
+                        episode_done.append(0)
+                        for a in agent_rewards:
+                            a.append(0)
+                        agent_info.append([[]])
+
+                # increment global step counter
+                train_step += 1
+
+                # for benchmarking learned policies
+                if arglist.benchmark:
+                    for i, info in enumerate(info_n):
+                        agent_info[-1][i].append(info_n['n'])
+                    if train_step > arglist.benchmark_iters and (done or terminal):
+                        file_name = arglist.benchmark_dir + arglist.exp_name + '.pkl'
+                        print('Finished benchmarking, now saving...')
+                        with open(file_name, 'wb') as fp:
+                            pickle.dump(agent_info[:-1], fp)
+                        break
+                    continue
+
+                # for displaying learned policies
+                if arglist.display:
+                    time.sleep(0.01)
+                    env.render()
+
+
+                    for i in range(len(trainers)):
+                        ax[i].clear()
+                        # ax[i].set_yticks([])
+                        # ax[i].set_xticks([])
+                        # ax[i].set_yticklabels([])
+                        # ax[i].set_xticklabels([])
+                    for i in range(len(trainers)):
+                        render_rel_position(figure, ax, i, obs_n[i])
+                    '''if train_step == 10:
+                        break'''
+                    # continue
+
+                if arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
                     for i in range(len(obs_n)):
-                        trainers[i!=0].experience(obs_n[i], action_n[i], rew_n[i] - constraint_n[i], new_obs_n[i], done_n[i], terminal)
-                elif arglist.good_policy == "cddpg":
-                    for i in range(len(obs_n)):
-                        trainers[i].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
-                        if i > 0:
-                            trainers[-1].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i],
-                                                   done_n[i], terminal)
+                        # update all trainers, if not in display or benchmark mode
+                        trainers[i if i == 0 else -1].preupdate()
+                        loss = trainers[i if i == 0 else -1].update(trainers, train_step)
                 else:
-                    for i, agent in enumerate(trainers):
-                        agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
-                obs_n = new_obs_n
-                for i, rew in enumerate(rew_n):
-                    # ignore leader reward
-                    episode_rewards[-1] += rew
-                    agent_rewards[i][-1] += rew
-
-                # for i, con in enumerate(constraint_n):
-                #     if i > 0:
-                #         episode_constraints[-1] += con[0]
-                #         agent_constraints[i][-1] += con[0]
-
-                for i, crash in enumerate(crash_n):
-                    episode_crash[-1] += crash
-
-                for i, done in enumerate(done_n):
-                    episode_done[-1] += done
-
-                if done or terminal:
-                    obs_n = env.reset()
-                    episode_step.append(0)
-                    episode_rewards.append(0)
-                    episode_constraints.append(0)
-                    episode_crash.append(0)
-                    episode_done.append(0)
-                    for a in agent_rewards:
-                        a.append(0)
-                    agent_info.append([[]])
-
-            # increment global step counter
-            train_step += 1
-
-            # for benchmarking learned policies
-            if arglist.benchmark:
-                for i, info in enumerate(info_n):
-                    agent_info[-1][i].append(info_n['n'])
-                if train_step > arglist.benchmark_iters and (done or terminal):
-                    file_name = arglist.benchmark_dir + arglist.exp_name + '.pkl'
-                    print('Finished benchmarking, now saving...')
-                    with open(file_name, 'wb') as fp:
-                        pickle.dump(agent_info[:-1], fp)
-                    break
-                continue
-
-            # for displaying learned policies
-            if arglist.display:
-                time.sleep(0.01)
-                env.render()
-
-
-                for i in range(len(trainers)):
-                    ax[i].clear()
-                    # ax[i].set_yticks([])
-                    # ax[i].set_xticks([])
-                    # ax[i].set_yticklabels([])
-                    # ax[i].set_xticklabels([])
-                for i in range(len(trainers)):
-                    render_rel_position(figure, ax, i, obs_n[i])
-                '''if train_step == 10:
-                    break'''
-                # continue
-
-            if arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
-                for i in range(len(obs_n)):
-                    # update all trainers, if not in display or benchmark mode
-                    trainers[i if i == 0 else -1].preupdate()
-                    loss = trainers[i if i == 0 else -1].update(trainers, train_step)
-            else:
-                for agent in trainers:
-                    loss = agent.update(trainers, train_step)
-            # save model, display training output
+                    for agent in trainers:
+                        loss = agent.update(trainers, train_step)
+                # save model, display training output
             if (done or terminal) and (len(episode_rewards) % arglist.save_rate == 0):
                 final_reward = np.mean(episode_rewards[-arglist.save_rate:])
                 final_constraint = np.mean(episode_constraints[-arglist.save_rate:])
