@@ -759,7 +759,7 @@ class Scenario(BaseScenario):
         #return np.concatenate([np.array([agent.dis2leader - agent.d_des])] + ang + vel + omg + agt_dis + agt_ang + sensor_ray)
         #return np.concatenate(err + vel + omg + agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r + target_dis + target_ang)
         # TODO: target_dis can be represented as d_cur - d_pre?
-        return np.concatenate(vel + omg + agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r + target_dis + target_ang)
+        return np.concatenate(agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r + target_dis + target_ang)
 
     def constraint(self, agent, world):
         return []

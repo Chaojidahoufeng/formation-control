@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
-    parser.add_argument("--display", action="store_true", default=False)
+    parser.add_argument("--display", action="store_true", default=True)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
@@ -234,12 +234,12 @@ def render_rel_position(figure, ax, agent_idx, obs):
 
 def train(arglist):
     # rendering setting
-    if arglist.display:
-        plt.ion()
-        figure, ax = plt.subplots(1, 4, figsize=(4*4, 4),
-                                                    facecolor="whitesmoke",
-                                                    num="Thread")
-    #tf.reset_default_graph()
+    # if arglist.display:
+    #     plt.ion()
+    #     figure, ax = plt.subplots(1, 4, figsize=(4*4, 4),
+    #                                                 facecolor="whitesmoke",
+    #                                                 num="Thread")
+    tf.reset_default_graph()
     with U.single_threaded_session():
         tf.set_random_seed(0)
         # Create environment
@@ -294,11 +294,12 @@ def train(arglist):
         for episode in range(10000):
             done = False
             terminal = (episode_step[-1] >= arglist.max_episode_len)
+            print('episode '+str(episode)+'\n')
             while not (terminal or done):
                 if arglist.network == "MLP":
                     # get action
                     if arglist.good_policy == "maddpg":
-                        action_n = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
+                         v = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
                     elif arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
                         action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
                         constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
@@ -371,14 +372,14 @@ def train(arglist):
                     env.render()
 
 
-                    for i in range(len(trainers)):
-                        ax[i].clear()
-                        # ax[i].set_yticks([])
-                        # ax[i].set_xticks([])
-                        # ax[i].set_yticklabels([])
-                        # ax[i].set_xticklabels([])
-                    for i in range(len(trainers)):
-                        render_rel_position(figure, ax, i, obs_n[i])
+                    # for i in range(len(trainers)):
+                    #     ax[i].clear()
+                    #     # ax[i].set_yticks([])
+                    #     # ax[i].set_xticks([])
+                    #     # ax[i].set_yticklabels([])
+                    #     # ax[i].set_xticklabels([])
+                    # for i in range(len(trainers)):
+                    #     render_rel_position(figure, ax, i, obs_n[i])
                     '''if train_step == 10:
                         break'''
                     # continue
