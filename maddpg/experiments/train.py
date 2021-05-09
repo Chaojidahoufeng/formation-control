@@ -299,7 +299,7 @@ def train(arglist):
                 if arglist.network == "MLP":
                     # get action
                     if arglist.good_policy == "maddpg":
-                         v = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
+                        action_n = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
                     elif arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
                         action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
                         constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
