@@ -1,1 +1,1 @@
-srun -p gpu -N 1 -n 1 python train.py --display 0
+srun -p gpu -N 1 -n 1 python train.py -display 0
