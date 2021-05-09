@@ -7,10 +7,12 @@ from multiagent.environment import MultiAgentEnv
 from multiagent.policy import InteractivePolicy
 import multiagent.scenarios as scenarios
 
+print(sys.executable)
+
 if __name__ == '__main__':
     # parse arguments
     parser = argparse.ArgumentParser(description=None)
-    parser.add_argument('-s', '--scenario', default='formation_tracking.py', help='Path of the scenario Python script.')
+    parser.add_argument('-s', '--scenario', default='rel_based_formation_stream_avoidance_4.py', help='Path of the scenario Python script.')
     args = parser.parse_args()
 
     # load scenario from script

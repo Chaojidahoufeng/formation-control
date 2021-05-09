@@ -45,7 +45,7 @@ class Scenario(BaseScenario):
             agent.size = 10*np.sqrt(2)
             agent.accel = 3
             agent.max_speed = 100
-            agent.u_noise = 0. if i == 0 else 0.2
+            agent.u_noise = 0.2
             agent.color = np.array([0., 1, 0.45]) if not agent.leader else np.array([1.0, 1.0, 0.0])
             agent.crash = 0  # calculate how many time the agent crashed
             agent.ray = np.zeros((num_agent_ray, 2))  # num_agent_ray*[dis, ang, type]

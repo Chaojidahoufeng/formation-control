@@ -1,2 +1,2 @@
-model_checkpoint_path: "/home/qxy/maddpg/policy/model_navigation.ckpt"
-all_model_checkpoint_paths: "/home/qxy/maddpg/policy/model_navigation.ckpt"
+model_checkpoint_path: "model_benchmark.ckpt"
+all_model_checkpoint_paths: "model_benchmark.ckpt"

@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
-    parser.add_argument("--display", action="store_true", default=False)
+    parser.add_argument("--display", action="store_true", default=True)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
@@ -291,7 +291,7 @@ def train(arglist):
         final_reward_prev = None
         print('Starting iterations...')
 
-        for episode in range(10000):
+        for episode in range(5):
             done = False
             terminal = (episode_step[-1] >= arglist.max_episode_len)
             print('episode '+str(episode)+'\n')
@@ -324,6 +324,7 @@ def train(arglist):
                         for i, agent in enumerate(trainers):
                             agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
                     obs_n = new_obs_n
+                    obs_n[0],obs_n[1] = obs_n[1], obs_n[0]
                     for i, rew in enumerate(rew_n):
                         # ignore leader reward
                         episode_rewards[-1] += rew
