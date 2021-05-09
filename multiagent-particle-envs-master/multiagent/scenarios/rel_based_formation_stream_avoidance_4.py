@@ -26,7 +26,7 @@ class Scenario(BaseScenario):
         world.agents = [Agent() for _ in range(num_agents)]
 
         # ideal formation topo side length
-        world.ideal_side_len = 15
+        world.ideal_side_len = 100
         # calculate the ideal formation topo
         world.ideal_topo_point = [[],[]]
         for i in range(num_follower_agents):
@@ -718,7 +718,7 @@ class Scenario(BaseScenario):
         if True in collide:
             agent.crash += 1
 
-        target_dis = [np.array([norm(world.landmarks[0].state.p_pos - p_pos)])]
+        target_dis = [np.array([norm(world.landmarks[0].state.p_pos - p_pos) / 1000])] 
         target_ang = [np.array([self.get_relAngle(agent, world.landmarks[0])])]
         self.set_agent_ray(agent, obs_dis, obs_ang, obs_size)
         #sensor_ray = [np.array([agent.ray[i][j]]) for i in range(len(agent.ray)) for j in range(len(agent.ray[i]))]

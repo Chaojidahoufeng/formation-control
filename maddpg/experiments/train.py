@@ -36,7 +36,8 @@ def parse_args():
 
     # Checkpointin1
     parser.add_argument("--exp-name", type=str, default='Test_benchmark', help="name of the experiment")
-    parser.add_argument("--save-dir", type=str, default="../policy/model_benchmark.ckpt", help="directory in which training state and model should be saved")
+    parser.add_argument("--episode-dir", type=str, default="../policy/model_maddpg_episode.npy", help="directory in which training state and model should be saved")
+    parser.add_argument("--save-dir", type=str, default="../policy/model_maddpg.ckpt", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
@@ -239,7 +240,6 @@ def train(arglist):
     #     figure, ax = plt.subplots(1, 4, figsize=(4*4, 4),
     #                                                 facecolor="whitesmoke",
     #                                                 num="Thread")
-    tf.reset_default_graph()
     with U.single_threaded_session():
         tf.set_random_seed(0)
         # Create environment
@@ -270,8 +270,10 @@ def train(arglist):
         # Load previous results, if necessary
         if arglist.load_dir == "":
             arglist.load_dir = arglist.save_dir
+            start_episode_num = 0
         if arglist.restore or arglist.benchmark:
             print('Loading previous state...')
+            start_episode_num = np.load(arglist.episode_dir)
             U.load_state(arglist.load_dir, saver)
 
         episode_rewards = [0.0]  # sum of rewards for all agents
@@ -291,10 +293,10 @@ def train(arglist):
         final_reward_prev = None
         print('Starting iterations...')
 
-        for episode in range(5):
+        for episode in range(start_episode_num, 100000):
             done = False
             terminal = (episode_step[-1] >= arglist.max_episode_len)
-            print('episode '+str(episode)+'\n')
+            #print('episode '+str(episode)+'\n')
             while not (terminal or done):
                 if arglist.network == "MLP":
                     # get action
@@ -407,6 +409,7 @@ def train(arglist):
                         U.save_state(arglist.save_dir, saver=saver)
                         final_reward_prev = final_reward
                         print("model saved time: ", time.asctime(time.localtime(time.time())))
+                        np.save(arglist.episode_dir, episode)
                 # print statement depends on whether or not there are adversaries
                 if num_adversaries == 0:
                     print("steps: {}, episodes: {}, mean episode reward: {}, mean episode step: {},  mean episode crash: {}, time: {}".format(
