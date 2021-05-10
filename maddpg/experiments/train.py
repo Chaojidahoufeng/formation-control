@@ -272,6 +272,8 @@ def train(arglist):
             arglist.load_dir = arglist.save_dir
             start_episode_num = 0
         if arglist.restore or arglist.benchmark:
+            import pdb
+            pdb.set_trace()
             print('Loading previous state...')
             start_episode_num = np.load(arglist.episode_dir)
             U.load_state(arglist.load_dir, saver)
