@@ -251,6 +251,15 @@ class Scenario(BaseScenario):
 
         return dist <= dist_min
 
+    def is_collide_with_wall(self, center):
+        # TODO: modify the collision judgement.
+        #bound = [[0, 0], [0, self.args.map_max_size], [self, args.map_max_size, 0], [self.args.map_max_size, self.args.map_max_size]]
+        closest_wall_dis = min([center.state.p_pos[0] - 0, 
+                               center.state.p_pos[1] - 0, 
+                               self.args.map_max_size - center.state.p_pos[0], 
+                               self.args.map_max_size - center.state.p_pos[1]])
+        return closest_wall_dis <= center.size
+
     # return all agents that are not adversaries
     def follower_agents(self, world):
         return [agent for agent in world.agents if not agent.leader]
@@ -696,6 +705,8 @@ class Scenario(BaseScenario):
         obs_type = []
         collide = []
         obs = world.agents + world.static_obs + world.dynamic_obs
+
+        collide.append(self.is_collide_with_wall(agent))
         for entity in obs:
             if entity == agent:
                 continue
