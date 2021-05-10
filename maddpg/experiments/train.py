@@ -12,7 +12,7 @@ from maddpg.trainer.cddpg import CDDPGAgentTrainer
 from maddpg.trainer.dqn import DQNAgentTrainer
 import tensorflow.contrib.layers as layers
 
-
+import maddpg.util.MDS
 
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")

@@ -5,7 +5,7 @@ from numpy.linalg import norm
 from multiagent.core import World, Agent, Landmark, Static_obs, Dynamic_obs
 from multiagent.scenario import BaseScenario
 
-import MDS
+import maddpg.util.MDS
 
 class Scenario(BaseScenario):
     def make_world(self, arglist):
