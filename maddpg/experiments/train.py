@@ -17,9 +17,9 @@ import tensorflow.contrib.layers as layers
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="rel_based_formation_stream_avoidance_4", help="name of the scenario script")
+    parser.add_argument("--scenario", type=str, default="rel_formation_only", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=250, help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=30000, help="number of episodes")
+    parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
@@ -42,7 +42,7 @@ def parse_args():
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
-    parser.add_argument("--display", action="store_true", default=False)
+    parser.add_argument("--display", action="store_true", default=True)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
@@ -293,7 +293,7 @@ def train(arglist):
         final_reward_prev = None
         print('Starting iterations...')
 
-        for episode in range(start_episode_num, 100000):
+        for episode in range(start_episode_num, arglist.num_episodes):
             done = False
             terminal = (episode_step[-1] >= arglist.max_episode_len)
             #print('episode '+str(episode)+'\n')
@@ -307,7 +307,7 @@ def train(arglist):
                         constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
                     # environment step
                     new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, done_n, info_n, crash_n = env.step(action_n)
-
+                    
                     rew_n = [navigation_reward_n[i]+avoidance_reward_n[i]+formation_reward_n[i] for i in range(len(navigation_reward_n))]
                     episode_step[-1] += 1
                     done = all(done_n)

@@ -1,3 +1,6 @@
+# place the agent at the center of map
+# only have formation reward and avoidance reward, no other reward
+# --map-max-size 2400 --save-dir "../policy/model_maddpg.ckpt"
 import numpy as np
 import math as math
 import random as random
@@ -140,7 +143,7 @@ class Scenario(BaseScenario):
             if agent.leader:
                 agent.state.p_pos = agents_ctr
             else:
-                agent.state.p_pos = np.random.rand(2) * self.args.agent_init_bound # randomly initialize position range from (0,0) to (100, 100)
+                agent.state.p_pos = np.array([self.args.map_max_size/2, self.args.map_max_size/2]) + ( np.random.rand(2) - np.array([1,1]) ) * self.args.agent_init_bound # randomly initialize position range from (0,0) to (100, 100)
             
             #TODO: 这里到底需要计算什么东西
             if not agent.leader:
@@ -573,6 +576,8 @@ class Scenario(BaseScenario):
         dis2goal = norm(agent.state.p_pos - world.landmarks[0].state.p_pos) / 100 # cm->m
         navigation_reward = - alpha * (dis2goal - agent.dis2goal_prev)
         avoidance_reward = - beta * np.sum(agent.crash)
+
+        navigation_reward = 0
         
         pos_rel = [[],[]] # real relative position
 
