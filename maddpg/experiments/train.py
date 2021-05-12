@@ -55,12 +55,12 @@ def parse_args():
     # world setting
     parser.add_argument("--map-max-size", type=int, default=1200)
     parser.add_argument("--agent-init-bound", type=int, default=400)
-    parser.add_argument("--ideal_side_len", type=int, default=400)
+    parser.add_argument("--ideal-side-len", type=int, default=400)
 
-    parser.add_argument("--nav_rew_weight", type=int, default=1)
-    parser.add_argument("--avoid_rew_weight", type=int, default=5)
-    parser.add_argument("--form_rew_weight", type=int, default=0.005)
-    parser.add_argument("--dist_rew_weight", type=int, default=0.002)
+    parser.add_argument("--nav-rew-weight", type=int, default=1)
+    parser.add_argument("--avoid-rew-weight", type=int, default=5)
+    parser.add_argument("--form-rew-weight", type=int, default=0.005)
+    parser.add_argument("--dist-rew-weight", type=int, default=0.002)
 
 
 
