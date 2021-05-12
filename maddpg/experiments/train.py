@@ -3,6 +3,8 @@ import numpy as np
 import tensorflow as tf
 import time
 import pickle
+import os
+import json
 from matplotlib import pyplot as plt
 
 import maddpg.common.tf_util as U
@@ -18,6 +20,7 @@ def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
     parser.add_argument("--scenario", type=str, default="rel_formation_only", help="name of the scenario script")
+    #parser.add_argument("--scenario", type=str, default="rel_formation", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=250, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
@@ -35,14 +38,14 @@ def parse_args():
     parser.add_argument("--param_noise_adaption_interval", type=int, default=50)
 
     # Checkpointin1
-    parser.add_argument("--exp-name", type=str, default='Test_benchmark', help="name of the experiment")
-    parser.add_argument("--episode-dir", type=str, default="../policy/model_maddpg_episode.npy", help="directory in which training state and model should be saved")
-    parser.add_argument("--save-dir", type=str, default="../policy/model_maddpg.ckpt", help="directory in which training state and model should be saved")
+    parser.add_argument("--exp-name", type=str, default='5-11-rel-formation-only', help="name of the experiment")
+    #parser.add_argument("--episode-file-name", type=str, default="model_maddpg_rel_formation_only.npy", help="directory in which training state and model should be saved")
+    parser.add_argument("--save-dir", type=str, default="model_maddpg_rel_formation_only.ckpt", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
-    parser.add_argument("--restore", action="store_true", default=False)
-    parser.add_argument("--display", action="store_true", default=False)
+    parser.add_argument("--restore", action="store_true", default=True)
+    parser.add_argument("--display", action="store_true", default=True)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
@@ -50,7 +53,16 @@ def parse_args():
 
     # world setting
     parser.add_argument("--map-max-size", type=int, default=1200)
-    parser.add_argument("--agent-init-bound", type=int, default=200)
+    parser.add_argument("--agent-init-bound", type=int, default=400)
+    parser.add_argument("--ideal_side_len", type=int, default=400)
+
+    parser.add_argument("--nav_rew_weight", type=int, default=1)
+    parser.add_argument("--avoid_rew_weight", type=int, default=5)
+    parser.add_argument("--form_rew_weight", type=int, default=0.005)
+    parser.add_argument("--dist_rew_weight", type=int, default=0.002)
+
+
+
     return parser.parse_args()
 
 def mlp_model(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None, is_training=True):
@@ -240,6 +252,19 @@ def train(arglist):
     #     figure, ax = plt.subplots(1, 4, figsize=(4*4, 4),
     #                                                 facecolor="whitesmoke",
     #                                                 num="Thread")
+    os.makedirs('../policy/'+arglist.exp_name, exist_ok=True)
+
+    # Save the args
+    #if not os.path.exists('../policy/'+arglist.exp_name+'/'+'commandline_args.txt'):
+    if not os.path.exists('../policy/'+arglist.exp_name+'/'+'commandline_args.txt'):
+        with open('../policy/'+arglist.exp_name+'/'+'commandline_args.txt', 'w') as f:
+            json.dump(arglist.__dict__, f, indent=2)
+    # else:
+    #     parser = argparse.ArgumentParser()
+    #     arglist = parser.parse_args()
+    #     with open('../policy/'+arglist.exp_name+'/'+'commandline_args.txt', 'w') as f:
+    #         arglist.__dict__ = json.load(f)
+
     with U.single_threaded_session():
         tf.set_random_seed(0)
         # Create environment
@@ -266,17 +291,24 @@ def train(arglist):
 
         # Initialize
         U.initialize()
-
+        
         # Load previous results, if necessary
         if arglist.load_dir == "":
             arglist.load_dir = arglist.save_dir
             start_episode_num = 0
         if arglist.restore or arglist.benchmark:
-            import pdb
-            pdb.set_trace()
             print('Loading previous state...')
-            start_episode_num = np.load(arglist.episode_dir)
-            U.load_state(arglist.load_dir, saver)
+            try:
+                npzfile = np.load('../policy/'+arglist.exp_name+'/'+arglist.exp_name+'.npz')
+                start_episode_num = npzfile['episode']
+                agents_expBF = npzfile['agents_expBF']
+                for i, agent in enumerate(trainers):
+                    agent.replay_buffer._storage = agents_expBF[i].tolist()
+                U.load_state('../policy/'+arglist.exp_name+'/'+arglist.load_dir, saver)
+            except:
+                print('There is something wrong with load previous state, initial from the very beginning')
+                start_episode_num = 0
+                exit()
 
         episode_rewards = [0.0]  # sum of rewards for all agents
         episode_constraints = [0.0]  # sum of constraints for all agents
@@ -308,8 +340,9 @@ def train(arglist):
                         action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
                         constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
                     # environment step
-                    new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, done_n, info_n, crash_n = env.step(action_n)
+                    new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, neighbor_dist_reward_n, done_n, info_n, crash_n = env.step(action_n)
                     
+                    reward_dict = {'navigation': navigation_reward_n, 'avoidance': avoidance_reward_n, 'formation': formation_reward_n, 'neighbor_dist': neighbor_dist_reward_n}
                     rew_n = [navigation_reward_n[i]+avoidance_reward_n[i]+formation_reward_n[i] for i in range(len(navigation_reward_n))]
                     episode_step[-1] += 1
                     done = all(done_n)
@@ -374,7 +407,7 @@ def train(arglist):
                 # for displaying learned policies
                 if arglist.display:
                     time.sleep(0.01)
-                    env.render()
+                    env.render(reward_dict)
 
 
                     # for i in range(len(trainers)):
@@ -408,17 +441,26 @@ def train(arglist):
                     final_reward_prev = final_reward
                 else:
                     if final_reward > final_reward_prev:
-                        U.save_state(arglist.save_dir, saver=saver)
+                        U.save_state('../policy/'+arglist.exp_name+'/'+arglist.save_dir, saver=saver)
                         final_reward_prev = final_reward
                         print("model saved time: ", time.asctime(time.localtime(time.time())))
-                        np.save(arglist.episode_dir, episode)
+
+                        # Save episodes num and experience buffer 
+                        print("Saving episode and replay buffer... ")
+                        agents_expBF = []
+                        for i, agent in enumerate(trainers):
+                            agents_expBF.append(agent.replay_buffer._storage)
+                        np.savez('../policy/'+arglist.exp_name+'/'+arglist.exp_name+'.npz', 
+                                episode=episode,
+                                agents_expBF=agents_expBF
+                                )
                 # print statement depends on whether or not there are adversaries
                 if num_adversaries == 0:
                     print("steps: {}, episodes: {}, mean episode reward: {}, mean episode step: {},  mean episode crash: {}, time: {}".format(
-                        train_step, len(episode_rewards), final_reward, final_step, final_crash, round(time.time()-t_start, 3)))
+                        train_step, episode, final_reward, final_step, final_crash, round(time.time()-t_start, 3)))
                 else:
                     print("steps: {}, episodes: {}, mean episode reward: {}, agent episode reward: {}, time: {}".format(
-                        train_step, len(episode_rewards), final_reward,
+                        train_step, episode, final_reward,
                         [np.mean(rew[-arglist.save_rate:]) for rew in agent_rewards], round(time.time()-t_start, 3)))
                 t_start = time.time()
                 # Keep track of final episode reward
@@ -434,19 +476,20 @@ def train(arglist):
 
             # saves final episode reward for plotting training curve later
             if len(episode_rewards) > arglist.num_episodes:
-                rew_file_name = arglist.plots_dir + arglist.exp_name + '_rewards.pkl'
+                os.makedirs(arglist.plots_dir + arglist.exp_name)
+                rew_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_rewards.pkl'
                 with open(rew_file_name, 'wb') as fp:
                     pickle.dump(final_ep_rewards, fp)
-                agrew_file_name = arglist.plots_dir + arglist.exp_name + '_agrewards.pkl'
+                agrew_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_agrewards.pkl'
                 with open(agrew_file_name, 'wb') as fp:
                     pickle.dump(final_ep_ag_rewards, fp)
-                step_file_name = arglist.plots_dir + arglist.exp_name + '_steps.pkl'
+                step_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_steps.pkl'
                 with open(step_file_name, 'wb') as fp:
                     pickle.dump(final_ep_steps, fp)
-                crash_file_name = arglist.plots_dir + arglist.exp_name + '_crashes.pkl'
+                crash_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_crashes.pkl'
                 with open(crash_file_name, 'wb') as fp:
                     pickle.dump(final_ep_crash, fp)
-                done_file_name = arglist.plots_dir + arglist.exp_name + '_done.pkl'
+                done_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_done.pkl'
                 with open(done_file_name, 'wb') as fp:
                     pickle.dump(final_ep_done, fp)
                 print('...Finished total of {} episodes.'.format(len(episode_rewards)))
@@ -454,6 +497,8 @@ def train(arglist):
 
 if __name__ == '__main__':
     arglist = parse_args()
+
+    # save the running bash code
     train(arglist)
     '''graph = tf.get_default_graph()
     sess = tf.Session()

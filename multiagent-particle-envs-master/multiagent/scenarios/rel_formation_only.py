@@ -19,6 +19,8 @@ class Scenario(BaseScenario):
         world.dim_c = 0
         #world.damping = 1
 
+        world.width = self.args.map_max_size
+
         num_follower_agents = 4
         num_leader_agent = 0
         num_agents = num_leader_agent + num_follower_agents
@@ -29,12 +31,12 @@ class Scenario(BaseScenario):
         world.agents = [Agent() for _ in range(num_agents)]
 
         # ideal formation topo side length
-        world.ideal_side_len = 100
+        world.ideal_side_len = self.args.ideal_side_len
         # calculate the ideal formation topo
         world.ideal_topo_point = [[],[]]
         for i in range(num_follower_agents):
-            world.ideal_topo_point[0].append(world.ideal_side_len*np.cos(i/num_follower_agents*2*np.pi))
-            world.ideal_topo_point[1].append(world.ideal_side_len*np.sin(i/num_follower_agents*2*np.pi))
+            world.ideal_topo_point[0].append(world.ideal_side_len / np.sqrt(2) * np.cos(i/num_follower_agents*2*np.pi))
+            world.ideal_topo_point[1].append(world.ideal_side_len / np.sqrt(2) * np.sin(i/num_follower_agents*2*np.pi))
 
 
         for i, agent in enumerate(world.agents):
@@ -570,15 +572,22 @@ class Scenario(BaseScenario):
         # TODO: to change the reward alpha and beta
         # TODO: 相对定位坐标
         rew = 0
-        alpha = 1
-        beta = 1
-        gamma = 1
-        dis2goal = norm(agent.state.p_pos - world.landmarks[0].state.p_pos) / 100 # cm->m
-        navigation_reward = - alpha * (dis2goal - agent.dis2goal_prev)
-        avoidance_reward = - beta * np.sum(agent.crash)
+        nav_rew_weight = self.args.nav_rew_weight
+        avoid_rew_weight = self.args.avoid_rew_weight
+        form_reward_weight = self.args.form_rew_weight
+        dist_rew_weight = self.args.dist_rew_weight
 
-        navigation_reward = 0
+        dis2goal = norm(agent.state.p_pos - world.landmarks[0].state.p_pos) / 100 # cm->m
+        navigation_reward = - nav_rew_weight * (dis2goal - agent.dis2goal_prev)
+        avoidance_reward = - avoid_rew_weight * self.collide_this_time
         
+        all_agents = world.agents
+        agent_index = world.agents.index(agent)
+        neighbor_two_agent = [world.agents[agent_index-1], world.agents[((agent_index+1) % len(all_agents))]]
+        dis_with_two_neighbor = [norm(agent.state.p_pos - neighbor_two_agent[0].state.p_pos), norm(agent.state.p_pos - neighbor_two_agent[1].state.p_pos)]
+
+        neighbor_dist_reward = - dist_rew_weight * np.abs(dis_with_two_neighbor[0] + dis_with_two_neighbor[1] - 2 * self.args.ideal_side_len)
+
         pos_rel = [[],[]] # real relative position
 
         for any_agent in world.agents:
@@ -586,12 +595,12 @@ class Scenario(BaseScenario):
             pos_rel[1].append(any_agent.state.p_pos[1] - agent.state.p_pos[1])
         
         topo_err = MDS.error_rel_g(np.array(world.ideal_topo_point), np.array(pos_rel), len(world.agents))
-        formation_reward = - gamma * topo_err
+        formation_reward = - form_reward_weight * topo_err
         # ideal topo: [-15,0] [0,15] [15,0] [0,-15]
         # pos_rel = [0,0] [9,6] [-15,4] [12,7]
         #formation_reward = 
        
-        return navigation_reward, avoidance_reward, formation_reward
+        return navigation_reward, avoidance_reward, formation_reward, neighbor_dist_reward
 
 
     def leader_reward(self, agent, world):
@@ -699,6 +708,7 @@ class Scenario(BaseScenario):
         obs_ang = []
         obs_size = []
         obs_type = []
+        self.collide_this_time = 0
         collide = []
         obs = world.agents + world.static_obs + world.dynamic_obs
         for entity in obs:
@@ -722,6 +732,7 @@ class Scenario(BaseScenario):
                 obs_type.append(entity.name)
         if True in collide:
             agent.crash += 1
+        self.collide_this_time += np.sum(collide)
 
         target_dis = [np.array([norm(world.landmarks[0].state.p_pos - p_pos) / 1000])] 
         target_ang = [np.array([self.get_relAngle(agent, world.landmarks[0])])]

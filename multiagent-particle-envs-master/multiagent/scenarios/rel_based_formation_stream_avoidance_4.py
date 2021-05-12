@@ -576,12 +576,12 @@ class Scenario(BaseScenario):
         # TODO: to change the reward alpha and beta
         # TODO: 相对定位坐标
         rew = 0
-        alpha = 1
-        beta = 1
-        gamma = 1
+        nav_rew_weight = 1
+        avoid_rew_weight = 10
+        form_reward_weight = 0.001
         dis2goal = norm(agent.state.p_pos - world.landmarks[0].state.p_pos) / 100 # cm->m
-        navigation_reward = - alpha * (dis2goal - agent.dis2goal_prev)
-        avoidance_reward = - beta * np.sum(agent.crash)
+        navigation_reward = - nav_rew_weight * (dis2goal - agent.dis2goal_prev)
+        avoidance_reward = - avoid_rew_weight * self.collide_this_time
         
         pos_rel = [[],[]] # real relative position
 
@@ -590,7 +590,7 @@ class Scenario(BaseScenario):
             pos_rel[1].append(any_agent.state.p_pos[1] - agent.state.p_pos[1])
         
         topo_err = MDS.error_rel_g(np.array(world.ideal_topo_point), np.array(pos_rel), len(world.agents))
-        formation_reward = - gamma * topo_err
+        formation_reward = - form_reward_weight * topo_err
         # ideal topo: [-15,0] [0,15] [15,0] [0,-15]
         # pos_rel = [0,0] [9,6] [-15,4] [12,7]
         #formation_reward = 
@@ -703,6 +703,7 @@ class Scenario(BaseScenario):
         obs_ang = []
         obs_size = []
         obs_type = []
+        self.collide_this_time = 0
         collide = []
         obs = world.agents + world.static_obs + world.dynamic_obs
 
@@ -728,6 +729,7 @@ class Scenario(BaseScenario):
                 obs_type.append(entity.name)
         if True in collide:
             agent.crash += 1
+        self.collide_this_time += np.sum(collide)
 
         target_dis = [np.array([norm(world.landmarks[0].state.p_pos - p_pos) / 1000])] 
         target_ang = [np.array([self.get_relAngle(agent, world.landmarks[0])])]

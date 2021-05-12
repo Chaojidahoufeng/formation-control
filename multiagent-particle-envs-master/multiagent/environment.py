@@ -90,6 +90,7 @@ class MultiAgentEnv(gym.Env):
         navigation_reward_n = []
         avoidance_reward_n = []
         formation_reward_n = []
+        neighbor_dist_reward_n = []
         done_n = []
         info_n = {'n': []}
         crash_n = []
@@ -105,10 +106,11 @@ class MultiAgentEnv(gym.Env):
         # record observation for each agent
         for agent in self.agents:
             obs_n.append(self._get_obs(agent))
-            navigation_rew, avoidance_rew, formation_rew = self._get_reward(agent)
+            navigation_rew, avoidance_rew, formation_rew, neighbor_dist_rew = self._get_reward(agent)
             navigation_reward_n.append(navigation_rew)
             avoidance_reward_n.append(avoidance_rew)
             formation_reward_n.append(formation_rew)
+            neighbor_dist_reward_n.append(neighbor_dist_rew)
             done_n.append(self._get_done(agent))
             info_n['n'].append(self._get_info(agent))
             crash_n.append(agent.crash)
@@ -118,7 +120,7 @@ class MultiAgentEnv(gym.Env):
         if self.shared_reward:
             reward_n = [reward] * self.n
         '''
-        return obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n,  done_n, info_n, crash_n
+        return obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, neighbor_dist_reward_n, done_n, info_n, crash_n
 
     def reset(self):
         # reset world
@@ -227,7 +229,9 @@ class MultiAgentEnv(gym.Env):
         self.render_geoms_xform = None
 
     # render environment
-    def render(self, mode='human'):
+    def render(self, reward_dict, mode='human'):
+        reward_names = list(reward_dict.keys())
+
         if mode == 'human':
             alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
             message = ''
@@ -283,7 +287,24 @@ class MultiAgentEnv(gym.Env):
             geom.add_attr(xform)
             self.render_geoms.append(geom)
             self.render_geoms_xform.append(xform)
-
+        
+        import copy
+        agents_end = agents
+        agents_begin = copy.deepcopy(agents)
+        agents_begin.insert(0, agents_begin.pop())
+        lines = []
+        lines_length_text = []
+        for i in range(len(agents_begin)):
+            line = rendering.Line((agents_begin[i].state.p_pos[0], agents_begin[i].state.p_pos[1]), 
+                                  (agents_end[i].state.p_pos[0], agents_end[i].state.p_pos[1]))
+            lines.append(line)
+            agent_begin_name = agents_begin[i].name
+            agent_end_name = agents_end[i].name
+            tmp_text = agent_begin_name + ' to ' + agent_end_name + ' : '
+            length = np.linalg.norm(agents_begin[i].state.p_pos - agents_end[i].state.p_pos)
+            tmp_text = tmp_text + str(length)
+            lines_length_text.append(tmp_text)
+            
 
         # add geoms to viewer
         for viewer in self.viewers:
@@ -374,26 +395,35 @@ class MultiAgentEnv(gym.Env):
                 self.viewers[i].add_geom(head)
                 label = rendering.make_text(text='%d' % e, font_size=12, x=agent.state.p_pos[0], y=agent.state.p_pos[1], color=(0, 0, 0, 255))
                 self.viewers[i].add_label(label)
-                if e > 0:
-                    err = rendering.make_text(text='error of agent %d = %f meters' % (e, np.linalg.norm(agent.err)), font_size=15,
-                                              x=self.world.agents[0].state.p_pos[0] - WINDOW_W // 1.5,
-                                              y=self.world.agents[0].state.p_pos[1] - WINDOW_H // 2.0 - 20 * (e + 1),
-                                              anchor_x='left',
-                                              color=(0, 0, 0, 255))
-                    self.viewers[i].add_label(err)
+                dis_btw_agents = rendering.make_text(text=lines_length_text[e], font_size=15,
+                                            x= self.world.width // 2 - WINDOW_W // 1.5,
+                                            y= self.world.width // 2 - WINDOW_H // 2.0 - 20 * (e + 2),
+                                            anchor_x='left',
+                                            color=(0, 0, 0, 255))
+                self.viewers[i].add_label(dis_btw_agents)
+
+                for name_num, name in enumerate(reward_names):
+                    agent_reward_text = rendering.make_text(text=name + ' '+str(np.around(reward_dict[name][e], decimals=2)), font_size=15,
+                                                        x= self.world.width // 2 - WINDOW_W // 1.5 + 200 * name_num,
+                                                        y= self.world.width // 2 + WINDOW_H // 2.0 - 20 * (e + 2),
+                                                        anchor_x='left',
+                                                        color=(0, 0, 0, 255))
+                    self.viewers[i].add_label(agent_reward_text)
             time = rendering.make_text(text='time = %f sec' % self.world.time, font_size=15,
-                                           x=self.world.agents[0].state.p_pos[0] - WINDOW_W // 1.5,
-                                           y=self.world.agents[0].state.p_pos[1] - WINDOW_H // 2.0,
+                                           x=self.world.width // 2 - WINDOW_W // 1.5,
+                                           y=self.world.width // 2 - WINDOW_H // 2.0,
                                            anchor_x='left',
                                            color=(0, 0, 0, 255))
             distance = rendering.make_text(text='distance = %f meters' % self.world.distance, font_size=15,
-                                           x=self.world.agents[0].state.p_pos[0] - WINDOW_W // 1.5,
-                                           y=self.world.agents[0].state.p_pos[1] - WINDOW_H // 2.0-20,
+                                           x=self.world.width // 2 - WINDOW_W // 1.5,
+                                           y=self.world.width // 2 - WINDOW_H // 2.0-20,
                                            anchor_x='left',
                                            color=(0, 0, 0, 255))
             self.viewers[i].add_label(distance)
             self.viewers[i].add_label(time)
             # render to display or array
+            for line in lines:
+                self.viewers[i].add_geom(line)
             results.append(self.viewers[i].render(return_rgb_array = mode=='rgb_array'))
 
 
