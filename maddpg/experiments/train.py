@@ -57,10 +57,10 @@ def parse_args():
     parser.add_argument("--agent-init-bound", type=int, default=400)
     parser.add_argument("--ideal-side-len", type=int, default=400)
 
-    parser.add_argument("--nav-rew-weight", type=int, default=1)
-    parser.add_argument("--avoid-rew-weight", type=int, default=5)
-    parser.add_argument("--form-rew-weight", type=int, default=0.005)
-    parser.add_argument("--dist-rew-weight", type=int, default=0.002)
+    parser.add_argument("--nav-rew-weight", type=float, default=1)
+    parser.add_argument("--avoid-rew-weight", type=float, default=5)
+    parser.add_argument("--form-rew-weight", type=float, default=0.005)
+    parser.add_argument("--dist-rew-weight", type=float, default=0.002)
 
 
 
