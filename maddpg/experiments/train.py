@@ -23,6 +23,7 @@ def parse_args():
     #parser.add_argument("--scenario", type=str, default="rel_formation", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=250, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")
+    parser.add_argument("--draw-episodes", type=int, default=10000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
@@ -475,8 +476,8 @@ def train(arglist):
                     final_ep_ag_constraints.append(np.mean(con[-arglist.save_rate:]))
 
             # saves final episode reward for plotting training curve later
-            if len(episode_rewards) > arglist.num_episodes:
-                os.makedirs(arglist.plots_dir + arglist.exp_name)
+            if len(episode_rewards) > arglist.draw_episodes:
+                os.makedirs(arglist.plots_dir + arglist.exp_name, exist_ok=True)
                 rew_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_rewards.pkl'
                 with open(rew_file_name, 'wb') as fp:
                     pickle.dump(final_ep_rewards, fp)
