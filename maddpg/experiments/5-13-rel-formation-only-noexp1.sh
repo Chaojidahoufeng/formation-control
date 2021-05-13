@@ -6,5 +6,4 @@ srun -p gpu -N 1 -n 1 python -u train.py \
 --avoid-rew-weight 5 \
 --form-rew-weight 0.005 \
 --dist-rew-weight 0.02 \
---action_space_dim 4 \
---restore
+--action_space_dim 4 
