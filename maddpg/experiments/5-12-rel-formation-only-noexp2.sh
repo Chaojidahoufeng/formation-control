@@ -4,4 +4,5 @@ srun -p gpu -N 1 -n 1 python -u train.py \
 --save-dir model_maddpg_rel_formation_only.ckpt \
 --avoid-rew-weight 5 \
 --form-rew-weight 0.05 \
---dist-rew-weight 0.002
+--dist-rew-weight 0.002 \
+--restore
