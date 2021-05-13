@@ -303,7 +303,7 @@ def train(arglist):
             import pdb
             pdb.set_trace()
             try:
-                npzfile = np.load('../policy/'+arglist.exp_name+'/'+arglist.exp_name+'.npz')
+                npzfile = np.load('../policy/'+arglist.exp_name+'/'+arglist.exp_name+'.npz',allow_pickle=True)
                 start_episode_num = npzfile['episode']
                 agents_expBF = npzfile['agents_expBF']
                 for i, agent in enumerate(trainers):
