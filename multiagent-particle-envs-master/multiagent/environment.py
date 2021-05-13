@@ -47,7 +47,8 @@ class MultiAgentEnv(gym.Env):
             total_action_space = []
             # physical action space
             if self.discrete_action_space:
-                u_action_space = spaces.Discrete(3) # foward, left right steer
+                u_action_space = spaces.Discrete(3)
+                u_action_space = spaces.Discrete(4) # left right foward backward steer
             else:
                 u_action_space = spaces.Box(low=-agent.u_range, high=+agent.u_range, shape=(world.dim_p,), dtype=np.float32)
             if agent.movable:
@@ -197,7 +198,8 @@ class MultiAgentEnv(gym.Env):
                         agent.action.u[1] += 0.35*(action[0][2])
                     else:
                         agent.action.u[0] += action[0][0] - action[0][1]  # omega
-                        agent.action.u[1] += 0.5 * (action[0][2])
+                        agent.action.u[1] += 1.0 * (action[0][2] - 0.5 * action[0][3])
+                        #agent.action.u[1] += 0.5 * (action[0][2])
                 else:
                     agent.action.u = action[0]
             #print(agent.action.u)
