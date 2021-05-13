@@ -300,6 +300,8 @@ def train(arglist):
 
         if arglist.restore or arglist.benchmark:
             print('Loading previous state...')
+            import pdb
+            pdb.set_trace()
             try:
                 npzfile = np.load('../policy/'+arglist.exp_name+'/'+arglist.exp_name+'.npz')
                 start_episode_num = npzfile['episode']
