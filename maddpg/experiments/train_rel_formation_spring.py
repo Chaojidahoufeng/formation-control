@@ -12,6 +12,7 @@ from maddpg.trainer.maddpg import MADDPGAgentTrainer
 from maddpg.trainer.ddpg import DDPGAgentTrainer
 from maddpg.trainer.cddpg import CDDPGAgentTrainer
 from maddpg.trainer.dqn import DQNAgentTrainer
+from maddpg.trainer.spring import SpringTrainer
 import tensorflow.contrib.layers as layers
 
 import maddpg.util.MDS
@@ -19,13 +20,13 @@ import maddpg.util.MDS
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="rel_formation_only", help="name of the scenario script")
+    parser.add_argument("--scenario", type=str, default="rel_formation_only_spring", help="name of the scenario script")
     #parser.add_argument("--scenario", type=str, default="rel_formation", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=250, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")
     parser.add_argument("--draw-episodes", type=int, default=10000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
-    parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
+    parser.add_argument("--good-policy", type=str, default="spring_model", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
     # Core training parameters
     parser.add_argument("--lr", type=float, default=1e-3, help="learning rate for Adam optimizer")
@@ -39,13 +40,13 @@ def parse_args():
     parser.add_argument("--param_noise_adaption_interval", type=int, default=50)
 
     # Checkpointin1
-    parser.add_argument("--exp-name", type=str, default='5-14-rel-formation-only-avoid-5-form-0_005-dist-0_002', help="name of the experiment")
+    parser.add_argument("--exp-name", type=str, default='5-18-rel-formation-spring', help="name of the experiment")
     #parser.add_argument("--episode-file-name", type=str, default="model_maddpg_rel_formation_only.npy", help="directory in which training state and model should be saved")
     parser.add_argument("--save-dir", type=str, default="model_maddpg_rel_formation_only.ckpt", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
-    parser.add_argument("--restore", action="store_true", default=True)
+    parser.add_argument("--restore", action="store_true", default=False)
     parser.add_argument("--display", action="store_true", default=True)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
@@ -54,7 +55,7 @@ def parse_args():
 
     # world setting
     parser.add_argument("--map-max-size", type=int, default=1200)
-    parser.add_argument("--agent-init-bound", type=int, default=400)
+    parser.add_argument("--agent-init-bound", type=int, default=200)
     parser.add_argument("--ideal-side-len", type=int, default=400)
 
     parser.add_argument("--nav-rew-weight", type=float, default=1)
@@ -180,7 +181,7 @@ def lstm_model(obs, trajectory_size, num_inputs, num_outputs, scope, reuse=False
         return tf.matmul(output[-1], softmax_w) + softmax_b
 
 def make_env(scenario_name, arglist, benchmark=False):
-    from multiagent.environment import MultiAgentEnv
+    from multiagent.environment_spring import MultiAgentEnv
     import multiagent.scenarios as scenarios
 
     # load scenario from script
@@ -212,7 +213,7 @@ def get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist):
             for i in range(2):
                 # the last trainer is for saving all followers' transitions
                 trainers.append(trainer("agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist))
-        else:
+        elif arglist.good_policy=="maddpg":
             trainer = MADDPGAgentTrainer
             for i in range(num_adversaries):
                 trainers.append(trainer(
@@ -222,6 +223,12 @@ def get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist):
                 trainers.append(trainer(
                     "agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist,
                     local_q_func=(arglist.good_policy=='ddpg')))
+        elif arglist.good_policy=="spring_model":
+            executor = SpringTrainer
+            for i in range(env.n):
+                trainers.append(executor(
+                    "agent_%d" % i, i, arglist
+                ))
     return trainers
 
 def render_rel_position(figure, ax, agent_idx, obs):
@@ -287,7 +294,7 @@ def train(arglist):
         trainers = get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist)
         #vl = [v for v in tf.global_variables() if "Adam" not in v.name]
         #saver = tf.train.Saver(var_list=vl)
-        saver = tf.train.Saver()
+        #saver = tf.train.Saver()
 
         print('Using good policy {} and adv policy {}'.format(arglist.good_policy, arglist.adv_policy))
 
@@ -349,8 +356,13 @@ def train(arglist):
                     elif arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
                         action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
                         constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
+                    elif arglist.good_policy == "spring_model":
+                        action_n = [agent.action(obs) for agent, obs in zip(trainers, obs_n)] # [[ax0,ay0],[ax1,ay1]]
                     # environment step
-                    new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, neighbor_dist_reward_n, done_n, info_n, crash_n = env.step(action_n)
+                    if arglist.good_policy == "spring_model":
+                        new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, neighbor_dist_reward_n, done_n, info_n, crash_n = env.step(action_n)
+                    else:
+                        new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, neighbor_dist_reward_n, done_n, info_n, crash_n = env.step(action_n)
                     
                     reward_dict = {'navigation': navigation_reward_n, 'avoidance': avoidance_reward_n, 'formation': formation_reward_n, 'neighbor_dist': neighbor_dist_reward_n}
                     rew_n = [navigation_reward_n[i]+avoidance_reward_n[i]+formation_reward_n[i] for i in range(len(navigation_reward_n))]
@@ -367,11 +379,11 @@ def train(arglist):
                             if i > 0:
                                 trainers[-1].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i],
                                                     done_n[i], terminal)
-                    else:
+                    elif arglist.good_policy == 'madddpg':
                         for i, agent in enumerate(trainers):
                             agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
                     obs_n = new_obs_n
- 
+
                     for i, rew in enumerate(rew_n):
                         # ignore leader reward
                         episode_rewards[-1] += rew
@@ -437,9 +449,11 @@ def train(arglist):
                         # update all trainers, if not in display or benchmark mode
                         trainers[i if i == 0 else -1].preupdate()
                         loss = trainers[i if i == 0 else -1].update(trainers, train_step)
-                else:
+                elif arglist.good_policy == "maddpg":
                     for agent in trainers:
                         loss = agent.update(trainers, train_step)
+                else:
+                    loss = 0
                 # save model, display training output
             if (done or terminal) and (len(episode_rewards) % arglist.save_rate == 0):
                 final_reward = np.mean(episode_rewards[-arglist.save_rate:])

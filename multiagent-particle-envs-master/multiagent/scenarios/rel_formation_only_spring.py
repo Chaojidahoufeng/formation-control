@@ -5,7 +5,7 @@ import numpy as np
 import math as math
 import random as random
 from numpy.linalg import norm
-from multiagent.core import World, Agent, Landmark, Static_obs, Dynamic_obs
+from multiagent.core_spring import World, Agent, Landmark, Static_obs, Dynamic_obs
 from multiagent.scenario import BaseScenario
 
 import maddpg.util.MDS as MDS
@@ -21,7 +21,7 @@ class Scenario(BaseScenario):
 
         world.width = self.args.map_max_size
 
-        num_follower_agents = 4
+        num_follower_agents = 5
         num_leader_agent = 0
         num_agents = num_leader_agent + num_follower_agents
         num_static_obs = 0
@@ -216,6 +216,12 @@ class Scenario(BaseScenario):
 
     def get_relAngle(self, center, target):
         ang = math.atan2(target.state.p_pos[1] - center.state.p_pos[1], target.state.p_pos[0] - center.state.p_pos[0]) - center.state.p_ang
+        if abs(ang) > np.pi:
+            ang -= np.sign(ang) * 2 * np.pi
+        return ang
+
+    def get_absAngle(self, center, target):
+        ang = math.atan2(target.state.p_pos[1] - center.state.p_pos[1], target.state.p_pos[0] - center.state.p_pos[0])
         if abs(ang) > np.pi:
             ang -= np.sign(ang) * 2 * np.pi
         return ang
@@ -720,8 +726,9 @@ class Scenario(BaseScenario):
             ang = self.get_relAngle(agent, entity)
             if 'agent' in entity.name and entity != agent:
                 # TODO: 这个地方怎么设计比较好（目前的做法是设计了一个最大通信距离）
-                dis2agt = np.array([min(norm(entity.state.p_pos - p_pos - agent.size - entity.size)/100, 50*agent.size/100)])
-                ang = self.get_relAngle(agent, entity)
+                #dis2agt = np.array([min(norm(entity.state.p_pos - p_pos - agent.size - entity.size)/100, 50*agent.size/100)])
+                dis2agt = np.array([norm(entity.state.p_pos - p_pos)/100])
+                ang = self.get_absAngle(agent, entity)
                 agt_dis.append(dis2agt)
                 agt_ang.append(np.array([ang]))
             if dis2obs < 25*agent.size/100 and entity != agent:
@@ -776,8 +783,7 @@ class Scenario(BaseScenario):
         #return np.concatenate([np.array([agent.dis2leader - agent.d_des])] + ang + vel + omg + agt_dis + agt_ang + sensor_ray)
         #return np.concatenate(err + vel + omg + agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r + target_dis + target_ang)
         # TODO: target_dis can be represented as d_cur - d_pre?
-        #return np.concatenate(agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r + target_dis + target_ang)
-        return np.concatenate(agt_dis + agt_ang + min_ray)
+        return np.concatenate(agt_dis + agt_ang)
 
     def constraint(self, agent, world):
         return []
