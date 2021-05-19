@@ -19,7 +19,7 @@ import maddpg.util.MDS
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="rel_formation_only", help="name of the scenario script")
+    parser.add_argument("--scenario", type=str, default="rel_formation_spring_error", help="name of the scenario script")
     #parser.add_argument("--scenario", type=str, default="rel_formation", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=250, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")
@@ -45,8 +45,8 @@ def parse_args():
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
-    parser.add_argument("--restore", action="store_true", default=True)
-    parser.add_argument("--display", action="store_true", default=True)
+    parser.add_argument("--restore", action="store_true", default=False)
+    parser.add_argument("--display", action="store_true", default=False)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
