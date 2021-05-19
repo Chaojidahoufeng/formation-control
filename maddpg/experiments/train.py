@@ -352,8 +352,6 @@ def train(arglist):
                     # environment step
                     new_obs_n, navigation_reward_n, avoidance_reward_n, formation_reward_n, neighbor_dist_reward_n, done_n, info_n, crash_n = env.step(action_n)
                     
-                    import pdb
-                    pdb.set_trace()
                     reward_dict = {'navigation': navigation_reward_n, 'avoidance': avoidance_reward_n, 'formation': formation_reward_n, 'neighbor_dist': neighbor_dist_reward_n}
                     rew_n = [navigation_reward_n[i]+avoidance_reward_n[i]+formation_reward_n[i] for i in range(len(navigation_reward_n))]
                     episode_step[-1] += 1
