@@ -19,7 +19,7 @@ import maddpg.util.MDS
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="rel_formation_spring_error", help="name of the scenario script")
+    parser.add_argument("--scenario", type=str, default="rel_formation_form_error", help="name of the scenario script")
     #parser.add_argument("--scenario", type=str, default="rel_formation", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=250, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")
@@ -39,13 +39,13 @@ def parse_args():
     parser.add_argument("--param_noise_adaption_interval", type=int, default=50)
 
     # Checkpointin1
-    parser.add_argument("--exp-name", type=str, default='5-14-rel-formation-only-avoid-5-form-0_005-dist-0_002', help="name of the experiment")
+    parser.add_argument("--exp-name", type=str, default='5-18-rel-formation-spring-error-avoid-5-form-0_05-dist-0_002', help="name of the experiment")
     #parser.add_argument("--episode-file-name", type=str, default="model_maddpg_rel_formation_only.npy", help="directory in which training state and model should be saved")
     parser.add_argument("--save-dir", type=str, default="model_maddpg_rel_formation_only.ckpt", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
-    parser.add_argument("--restore", action="store_true", default=False)
+    parser.add_argument("--restore", action="store_true", default=True)
     parser.add_argument("--display", action="store_true", default=False)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
