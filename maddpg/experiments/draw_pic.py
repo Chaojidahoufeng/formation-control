@@ -17,6 +17,7 @@ rew_file_name = arglist['plots_dir'] + arglist['exp_name'] + '/' + arglist['exp_
 step_file_name = arglist['plots_dir'] + arglist['exp_name'] + '/' + arglist['exp_name'] + '_steps.pkl'
 crash_file_name = arglist['plots_dir'] + arglist['exp_name'] + '/' + arglist['exp_name'] + '_crashes.pkl'
 done_file_name = arglist['plots_dir'] + arglist['exp_name'] + '/' + arglist['exp_name'] + '_done.pkl'
+save_rate = arglist['save_rate']
 
 # 重点是rb和r的区别，rb是打开2进制文件，文本文件用r
 with open(rew_file_name,'rb') as f:
@@ -26,9 +27,9 @@ with open(step_file_name,'rb') as f:
   step_data = pickle.load(f)
 
 
-df=pd.DataFrame({'epoch':range(len(rew_data)),'reward':rew_data})
+df=pd.DataFrame({'epoch':[i * save_rate for i in range(len(rew_data))],'reward':rew_data})
 
 ax = sns.lineplot(x="epoch", y="reward", data=df)
 ax.set_title(exp_name)
-plt.savefig(arglist['plots_dir'] + arglist['exp_name'] + '/'+'output_reward.png')
+plt.savefig(arglist['plots_dir'] + arglist['exp_name'] + '/'+'output_reward_1.png')
 print('ok')
