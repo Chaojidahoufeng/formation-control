@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=True)
-    parser.add_argument("--display", action="store_true", default=False)
+    parser.add_argument("--display", action="store_true", default=True)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
@@ -56,6 +56,7 @@ def parse_args():
     parser.add_argument("--map-max-size", type=int, default=1200)
     parser.add_argument("--agent-init-bound", type=int, default=400)
     parser.add_argument("--ideal-side-len", type=int, default=400)
+    parser.add_argument("--num-statiic-obs", type=int, default=0)
 
     parser.add_argument("--nav-rew-weight", type=float, default=1)
     parser.add_argument("--avoid-rew-weight", type=float, default=5)
@@ -280,9 +281,7 @@ def train(arglist):
             his_shape_n = [((env.observation_space[i].shape[0]+3)*arglist.trajectory_size,) for i in range(env.n)]
         num_adversaries = min(env.n, arglist.num_adversaries)
         episode_step = [0]
-        final_ep_steps = []
         episode_done = [0]
-        final_ep_done = []
         train_step = 0
         trainers = get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist)
         #vl = [v for v in tf.global_variables() if "Adam" not in v.name]
@@ -312,6 +311,29 @@ def train(arglist):
                     print('No NPZ File. Load from beginning')
                     start_episode_num = 0
                     agents_expBF = [np.array([]) for _ in range(4)]
+
+                try:
+                    rew_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_rewards.pkl'
+                    step_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_steps.pkl'
+                    crash_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_crashes.pkl'
+                    done_file_name = arglist.plots_dir + arglist.exp_name + '/' + arglist.exp_name + '_done.pkl'
+                    with open(rew_file_name,'rb') as f:
+                        final_ep_rewards = pickle.load(f)
+                    with open(agrew_file_name, 'rb') as f:
+                        final_ep_ag_rewards = pickle.load(f)
+                    with open(step_file_name,'rb') as f:
+                        final_ep_steps = pickle.load(f)
+                    with open(crash_file_name,'rb') as f:
+                        final_ep_crash = pickle.load(f)
+                    with open(done_file_name,'rb') as f:
+                        final_ep_done = pickle.load(f)
+                except:
+                    final_ep_rewards = []  # sum of rewards for training curve
+                    final_ep_ag_rewards = []  # agent rewards for training curve
+                    final_ep_crash = []  # sum of crashes for training curve
+                    final_ep_steps = []
+                    final_ep_done = []
+
                 for i, agent in enumerate(trainers):
                     agent.replay_buffer._storage = agents_expBF[i].tolist()
                 U.load_state('../policy/'+arglist.exp_name+'/'+arglist.load_dir, saver)
@@ -324,12 +346,10 @@ def train(arglist):
         episode_constraints = [0.0]  # sum of constraints for all agents
         agent_rewards = [[0.0] for _ in range(env.n)]  # individual agent reward
         agent_constraints = [[0.0] for _ in range(env.n)]  # individual agent constraint
-        final_ep_rewards = []  # sum of rewards for training curve
-        final_ep_ag_rewards = []  # agent rewards for training curve
         final_ep_constraints = []  # sum of constraints for training curve
         final_ep_ag_constraints = []  # agent constraints for training curve
         episode_crash = [0]  # sum of crashes for all agents
-        final_ep_crash = []  # sum of crashes for training curve
+
         agent_info = [[[]]]  # placeholder for benchmarking info
 
         obs_n = env.reset()

@@ -16,7 +16,7 @@ class Scenario(BaseScenario):
         #rendering unit is in centimeter
         world = World()
         # set any world properties first
-        world.dim_c = 0
+        world.dim_c = 10
         #world.damping = 1
 
         world.width = self.args.map_max_size
@@ -589,14 +589,13 @@ class Scenario(BaseScenario):
 
         neighbor_dist_reward = - dist_rew_weight * np.abs(dis_with_two_neighbor[0] + dis_with_two_neighbor[1] - 2 * self.args.ideal_side_len)
 
-        #pos_rel = [[],[]] # real relative position
-        topo_err = 0
+        pos_rel = [[],[]] # real relative position
 
         for any_agent in world.agents:
-            if any_agent == agent: continue
-            topo_err += np.abs(norm(any_agent.state.p_pos - agent.state.p_pos) - self.args.ideal_side_len)
+            pos_rel[0].append(any_agent.state.p_pos[0] - agent.state.p_pos[0])
+            pos_rel[1].append(any_agent.state.p_pos[1] - agent.state.p_pos[1])
         
-        #topo_err = MDS.error_rel_g(np.array(world.ideal_topo_point), np.array(pos_rel), len(world.agents))
+        topo_err = MDS.error_rel_g(np.array(world.ideal_topo_point), np.array(pos_rel), len(world.agents))
         formation_reward = - form_reward_weight * topo_err
         # ideal topo: [-15,0] [0,15] [15,0] [0,-15]
         # pos_rel = [0,0] [9,6] [-15,4] [12,7]
@@ -751,7 +750,6 @@ class Scenario(BaseScenario):
         obs_ang = [np.array([agent.obs_ang[i]]) if agent.avoiding[i] else np.array([0.0]) for i in range(len(agent.obs_ang))]
         obs_r = [np.array([agent.obs_r[i]]) if agent.avoiding[i] else np.array([0.0]) for i in range(len(agent.obs_r))]
 
-        # communication of all other agents, now assume the communication graph is fully connected
         formation_pos_x = []
         formation_pos_y = []
         formation_pos_x.append(p_pos[0])
@@ -762,6 +760,12 @@ class Scenario(BaseScenario):
             formation_pos_x.append(other.state.p_pos[0])
             formation_pos_y.append(other.state.p_pos[1])
             agent.agents_ctr = np.array([np.mean(formation_pos_x), np.mean(formation_pos_y)])
+
+        # communication of all other agents, now assume the communication graph is fully connected
+        comm = []
+        for other in world.agents:
+            if other is agent: continue
+            comm.append(other.state.c)
 
         vel = []
         omg = []
@@ -778,7 +782,9 @@ class Scenario(BaseScenario):
         #return np.concatenate(err + vel + omg + agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r + target_dis + target_ang)
         # TODO: target_dis can be represented as d_cur - d_pre?
         #return np.concatenate(agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r + target_dis + target_ang)
-        return np.concatenate(agt_dis + agt_ang + min_ray)
+
+
+        return np.concatenate(agt_dis + agt_ang + min_ray + comm)
 
     def constraint(self, agent, world):
         return []
