@@ -16,7 +16,7 @@ class Scenario(BaseScenario):
         #rendering unit is in centimeter
         world = World()
         # set any world properties first
-        world.dim_c = 10
+        world.dim_c = 2
         #world.damping = 1
 
         world.width = self.args.map_max_size
@@ -784,7 +784,7 @@ class Scenario(BaseScenario):
         #return np.concatenate(agt_dis + agt_ang + start_ray + end_ray + min_ray + obs_dis + obs_ang + obs_r + target_dis + target_ang)
 
 
-        return np.concatenate(agt_dis + agt_ang + min_ray + comm)
+        return np.concatenate(agt_dis + agt_ang + min_ray + vel + omg + comm)
 
     def constraint(self, agent, world):
         return []

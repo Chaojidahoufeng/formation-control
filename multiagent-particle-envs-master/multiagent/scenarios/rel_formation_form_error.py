@@ -16,7 +16,7 @@ class Scenario(BaseScenario):
         #rendering unit is in centimeter
         world = World()
         # set any world properties first
-        world.dim_c = 0
+        world.dim_c = 0 # communication dimension
         #world.damping = 1
 
         world.width = self.args.map_max_size

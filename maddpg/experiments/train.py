@@ -19,7 +19,7 @@ import maddpg.util.MDS
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="rel_formation_form_error", help="name of the scenario script")
+    parser.add_argument("--scenario", type=str, default="rel_formation_form_error_comm", help="name of the scenario script")
     #parser.add_argument("--scenario", type=str, default="rel_formation", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=250, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=100000, help="number of episodes")

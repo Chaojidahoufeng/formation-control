@@ -1,6 +1,6 @@
 srun -p gpu -N 1 -n 1 python -u train.py \
---exp-name 5-18-rel-formation-form-error-avoid-5-form-0_05-dist-0 \
---scenario rel_formation_form_error \
+--exp-name 5-28-rel-formation-form-error-avoid-5-form-0_05-dist-0 \
+--scenario rel_formation_form_error_comm \
 --save-dir model_maddpg_rel_formation_only.ckpt \
 --avoid-rew-weight 5 \
 --form-rew-weight 0.05 \

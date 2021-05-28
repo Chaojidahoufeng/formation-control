@@ -212,7 +212,8 @@ class MultiAgentEnv(gym.Env):
             # communication action
             if self.discrete_action_input:
                 agent.action.c = np.zeros(self.world.dim_c)
-                agent.action.c[action[0]] = 1.0
+                agent.action.c[0] = agent.state.p_vel / 100
+                agent.action.c[1] = agent.state.p_omg / np.pi
             else:
                 agent.action.c = action[0]
             action = action[1:]
