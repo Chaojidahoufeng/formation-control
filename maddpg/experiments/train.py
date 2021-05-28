@@ -341,6 +341,12 @@ def train(arglist):
                 print('There is something wrong with load previous state, initial from the very beginning')
                 start_episode_num = 0
                 exit()
+        else:
+            final_ep_rewards = []  # sum of rewards for training curve
+            final_ep_ag_rewards = []  # agent rewards for training curve
+            final_ep_crash = []  # sum of crashes for training curve
+            final_ep_steps = []
+            final_ep_done = []
 
         episode_rewards = [0.0]  # sum of rewards for all agents
         episode_constraints = [0.0]  # sum of constraints for all agents
