@@ -42,6 +42,7 @@ def parse_args():
     parser.add_argument("--exp-name", type=str, default='5-18-rel-formation-spring-error-avoid-5-form-0_05-dist-0', help="name of the experiment")
     #parser.add_argument("--episode-file-name", type=str, default="model_maddpg_rel_formation_only.npy", help="directory in which training state and model should be saved")
     parser.add_argument("--save-dir", type=str, default="model_maddpg_rel_formation_only.ckpt", help="directory in which training state and model should be saved")
+    parser.add_argument("--show-rate", type=int, default=2000, help="show once every time this many episodes are completed")
     parser.add_argument("--save-rate", type=int, default=20000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluations
@@ -466,13 +467,14 @@ def train(arglist):
                 else:
                     for agent in trainers:
                         loss = agent.update(trainers, train_step)
-                # save model, display training output
+            
+            final_reward = np.mean(episode_rewards[-arglist.save_rate:])
+            final_constraint = np.mean(episode_constraints[-arglist.save_rate:])
+            final_step = np.mean(episode_step[-arglist.save_rate:])
+            final_crash = np.mean(episode_crash[-arglist.save_rate:])
+            final_done = np.mean(episode_done[-arglist.save_rate:])
             if (done or terminal) and (len(episode_rewards) % arglist.save_rate == 0):
-                final_reward = np.mean(episode_rewards[-arglist.save_rate:])
-                final_constraint = np.mean(episode_constraints[-arglist.save_rate:])
-                final_step = np.mean(episode_step[-arglist.save_rate:])
-                final_crash = np.mean(episode_crash[-arglist.save_rate:])
-                final_done = np.mean(episode_done[-arglist.save_rate:])
+                # save model
                 if not final_reward_prev:
                     final_reward_prev = final_reward
                 else:
@@ -490,7 +492,8 @@ def train(arglist):
                                 episode=episode,
                                 agents_expBF=agents_expBF
                                 )
-                # print statement depends on whether or not there are adversaries
+            # print statement depends on whether or not there are adversaries
+            if (done or terminal) and (len(episode_rewards) % arglist.show_rate == 0):
                 if num_adversaries == 0:
                     print("steps: {}, episodes: {}, mean episode reward: {}, mean episode step: {},  mean episode crash: {}, time: {}".format(
                         train_step, episode, final_reward, final_step, final_crash, round(time.time()-t_start, 3)))
