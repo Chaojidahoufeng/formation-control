@@ -6,4 +6,4 @@ srun -p gpu -N 1 -n 1 python -u train.py \
 --form-rew-weight 0.05 \
 --dist-rew-weight 0. \
 --action_space_dim 4 \
---num-episodes 300000 \
+--num-episodes 200000 
