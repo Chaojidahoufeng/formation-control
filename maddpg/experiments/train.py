@@ -39,14 +39,14 @@ def parse_args():
     parser.add_argument("--param_noise_adaption_interval", type=int, default=50)
 
     # Checkpointin1
-    parser.add_argument("--exp-name", type=str, default='5-18-rel-formation-spring-error-avoid-5-form-0_05-dist-0_002', help="name of the experiment")
+    parser.add_argument("--exp-name", type=str, default='5-18-rel-formation-spring-error-avoid-5-form-0_05-dist-0', help="name of the experiment")
     #parser.add_argument("--episode-file-name", type=str, default="model_maddpg_rel_formation_only.npy", help="directory in which training state and model should be saved")
     parser.add_argument("--save-dir", type=str, default="model_maddpg_rel_formation_only.ckpt", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
-    # Evaluation
-    parser.add_argument("--restore", action="store_true", default=True)
-    parser.add_argument("--display", action="store_true", default=True)
+    # Evaluations
+    parser.add_argument("--restore", action="store_true", default=False)
+    parser.add_argument("--display", action="store_true", default=False)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")

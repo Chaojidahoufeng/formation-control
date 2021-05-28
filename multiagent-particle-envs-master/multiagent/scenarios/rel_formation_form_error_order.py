@@ -720,7 +720,7 @@ class Scenario(BaseScenario):
             ang = self.get_relAngle(agent, entity)
             if 'agent' in entity.name and entity != agent:
                 # TODO: 这个地方怎么设计比较好（目前的做法是设计了一个最大通信距离）
-                dis2agt = np.array([min(norm(entity.state.p_pos - p_pos)/100, 50*agent.size/100)])
+                dis2agt = np.array([min(norm(entity.state.p_pos - p_pos - agent.size - entity.size)/100, 50*agent.size/100)])
                 ang = self.get_relAngle(agent, entity)
                 agt_dis.append(dis2agt)
                 agt_ang.append(np.array([ang]))
@@ -731,10 +731,6 @@ class Scenario(BaseScenario):
                 obs_ang.append(ang)
                 obs_size.append(entity.size/100)
                 obs_type.append(entity.name)
-        # change the order of the observation distance and angle
-        current_agent_num = int(agent.name[-1])
-        agt_dis = agt_dis[current_agent_num:] + agt_dis[:current_agent_num]
-        agt_ang = agt_ang[current_agent_num:] + agt_ang[:current_agent_num]
         if True in collide:
             agent.crash += 1
         self.collide_this_time += np.sum(collide)
