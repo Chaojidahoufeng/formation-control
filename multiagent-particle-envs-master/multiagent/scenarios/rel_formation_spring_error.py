@@ -732,6 +732,10 @@ class Scenario(BaseScenario):
                 obs_ang.append(ang)
                 obs_size.append(entity.size/100)
                 obs_type.append(entity.name)
+        # change the order of the observation distance and angle
+        current_agent_num = int(agent.name[-1])
+        agt_dis = agt_dis[current_agent_num:] + agt_dis[:current_agent_num]
+        agt_ang = agt_ang[current_agent_num:] + agt_ang[:current_agent_num]
         if True in collide:
             agent.crash += 1
         self.collide_this_time += np.sum(collide)
