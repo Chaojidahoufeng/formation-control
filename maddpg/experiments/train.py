@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument("--param_noise_adaption_interval", type=int, default=50)
 
     # Checkpointin1
-    parser.add_argument("--exp-name", type=str, default='5-18-rel-formation-spring-error-avoid-5-form-0_05-dist-0', help="name of the experiment")
+    parser.add_argument("--exp-name", type=str, default='5-28-rel-formation-form-error-avoid-5-form-0_05-dist-0', help="name of the experiment")
     #parser.add_argument("--episode-file-name", type=str, default="model_maddpg_rel_formation_only.npy", help="directory in which training state and model should be saved")
     parser.add_argument("--save-dir", type=str, default="model_maddpg_rel_formation_only.ckpt", help="directory in which training state and model should be saved")
     parser.add_argument("--show-rate", type=int, default=2000, help="show once every time this many episodes are completed")
@@ -57,13 +57,16 @@ def parse_args():
     parser.add_argument("--map-max-size", type=int, default=1200)
     parser.add_argument("--agent-init-bound", type=int, default=400)
     parser.add_argument("--ideal-side-len", type=int, default=400)
-    parser.add_argument("--num-statiic-obs", type=int, default=0)
+    parser.add_argument("--num-static-obs", type=int, default=0)
 
     parser.add_argument("--nav-rew-weight", type=float, default=1)
     parser.add_argument("--avoid-rew-weight", type=float, default=5)
     parser.add_argument("--form-rew-weight", type=float, default=0.005)
     parser.add_argument("--dist-rew-weight", type=float, default=0.002)
     parser.add_argument("--action_space_dim",  type=int, default=4)
+
+    # reward setting
+    parser.add_argument("--use-exp-reward", action="store_true", default=False)
 
 
 
