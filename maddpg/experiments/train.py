@@ -272,7 +272,7 @@ def train(arglist):
                 # collect experience
                 if arglist.good_policy == "ddpg":
                     for i in range(len(obs_n)):
-                        trainers[i!=0].experience(obs_n[i], action_n[i], rew_n[i] - constraint_n[i][0], new_obs_n[i], done_n[i], terminal)
+                        trainers[i!=0].experience(obs_n[i], action_n[i], rew_n[i] - constraint_n[i], new_obs_n[i], done_n[i], terminal)
                 elif arglist.good_policy == "cddpg":
                     for i in range(len(obs_n)):
                         trainers[i].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
@@ -291,8 +291,8 @@ def train(arglist):
 
                 for i, con in enumerate(constraint_n):
                     if i > 0:
-                        episode_constraints[-1] += con[0]
-                        agent_constraints[i][-1] += con[0]
+                        episode_constraints[-1] += con
+                        agent_constraints[i][-1] += con
 
                 for i, crash in enumerate(crash_n):
                     episode_crash[-1] += crash
