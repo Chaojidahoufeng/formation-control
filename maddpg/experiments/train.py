@@ -14,7 +14,8 @@ import tensorflow.contrib.layers as layers
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="formation_tracking", help="name of the scenario script")
+    parser.add_argument("--id", type=str, default="1", help="experiment id")
+    parser.add_argument("--scenario", type=str, default="formation_stream_avoidance_", help="name of the scenario script")
     parser.add_argument("--max-episode-len", type=int, default=250, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=30000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
@@ -32,17 +33,22 @@ def parse_args():
     parser.add_argument("--param_noise_adaption_interval", type=int, default=50)
 
     # Checkpointin1
-    parser.add_argument("--exp-name", type=str, default='Test_benchmark', help="name of the experiment")
-    parser.add_argument("--save-dir", type=str, default="../policy/model_benchmark.ckpt", help="directory in which training state and model should be saved")
+    parser.add_argument("--exp-name", type=str, default='Test_', help="name of the experiment")
+    parser.add_argument("--save-dir", type=str, default="../policy/model_", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     # Evaluation
+    parser.add_argument("--monte-carlo", action="store_true", default=False)
     parser.add_argument("--restore", action="store_true", default=False)
     parser.add_argument("--display", action="store_true", default=False)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="../trainResult/", help="directory where benchmark data is saved")
     parser.add_argument("--plots-dir", type=str, default="../trainResult/", help="directory where plot data is saved")
+    # World setting
+    parser.add_argument("--agent_num", type=int, default=4, help="number of agents")
+    parser.add_argument("--static_obstacle_num", type=int, default=5, help="number of static obstacles")
+    parser.add_argument("--dynamic_obstacle_num", type=int, default=5, help="number of dynamic obstacles")
     return parser.parse_args()
 
 def mlp_model(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None, is_training=True):
@@ -164,7 +170,7 @@ def make_env(scenario_name, arglist, benchmark=False):
     # load scenario from script
     scenario = scenarios.load(scenario_name + ".py").Scenario()
     # create world
-    world = scenario.make_world()
+    world = scenario.make_world(arglist)
     # create multiagent environment
     if benchmark:
         env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation, scenario.constraint, scenario.benchmark_data)
@@ -176,8 +182,13 @@ def get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist):
     trainers = []
     if arglist.network=="MLP":
         model = mlp_model
-        if arglist.good_policy=="ddpg":
+        if arglist.good_policy == "ddpg":
             trainer = DDPGAgentTrainer
+            for i in range(2):
+                # the last trainer is for saving all followers' transitions
+                trainers.append(trainer("agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist))
+        elif arglist.good_policy == "ddpg2":
+            trainer = DDPG2AgentTrainer
             for i in range(2):
                 # the last trainer is for saving all followers' transitions
                 trainers.append(trainer("agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist))
@@ -208,9 +219,9 @@ def train(arglist):
     with U.single_threaded_session():
         tf.set_random_seed(0)
         # Create environment
-        env = make_env(arglist.scenario, arglist, arglist.benchmark)
+        env = make_env(arglist.scenario + arglist.id, arglist, arglist.benchmark)
         # Create agent trainers
-        if arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg" :
+        if "ddpg" in arglist.good_policy or arglist.good_policy == "cddpg" :
             obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
             his_shape_n = [((env.observation_space[i].shape[0]+3)*arglist.trajectory_size,) for i in range(env.n)]
         else:
@@ -218,10 +229,10 @@ def train(arglist):
             his_shape_n = [((env.observation_space[i].shape[0]+3)*arglist.trajectory_size,) for i in range(env.n)]
         num_adversaries = min(env.n, arglist.num_adversaries)
         episode_step = [0]
-        final_ep_steps = []
+        ep_steps = []
         episode_done = [0]
-        final_ep_done = []
-        train_step = 0
+        ep_done = []
+        step = 0
         trainers = get_trainers(env, num_adversaries, his_shape_n, obs_shape_n, arglist)
         #vl = [v for v in tf.global_variables() if "Adam" not in v.name]
         #saver = tf.train.Saver(var_list=vl)
@@ -230,27 +241,34 @@ def train(arglist):
         print('Using good policy {} and adv policy {}'.format(arglist.good_policy, arglist.adv_policy))
 
         # Initialize
+        state = '_train'
         U.initialize()
 
         # Load previous results, if necessary
         if arglist.load_dir == "":
-            arglist.load_dir = arglist.save_dir
-        if arglist.display or arglist.restore or arglist.benchmark:
+            arglist.load_dir = arglist.save_dir + arglist.id + '.ckpt'
+        if arglist.display or arglist.restore or arglist.benchmark or arglist.monte_carlo:
             print('Loading previous state...')
+            state = '_eval' 
             U.load_state(arglist.load_dir, saver)
 
-        episode_rewards = [0.0]  # sum of rewards for all agents
+        episode_formation_err = [0.0]  # sum of rewards for all agents
+        episode_avoidance_err = [0.0]  # sum of rewards for all agents
         episode_constraints = [0.0]  # sum of constraints for all agents
-        agent_rewards = [[0.0] for _ in range(env.n)]  # individual agent reward
+        agent_formation_err = [[0.0] for _ in range(env.n)]  # individual agent reward
+        agent_avoidance_err = [[0.0] for _ in range(env.n)]  # individual agent reward
         agent_constraints = [[0.0] for _ in range(env.n)]  # individual agent constraint
-        final_ep_rewards = []  # sum of rewards for training curve
-        final_ep_ag_rewards = []  # agent rewards for training curve
-        final_ep_constraints = []  # sum of constraints for training curve
-        final_ep_ag_constraints = []  # agent constraints for training curve
+        ep_formation_err = []  # sum of rewards for training curve
+        ep_avoidance_err = []  # sum of rewards for training curve
+        ep_ag_formation_err = []  # agent rewards for training curve
+        ep_ag_avoidance_err = []  # agent rewards for training curve
+        ep_constraints = []  # sum of constraints for training curve
+        ep_ag_constraints = []  # agent constraints for training curve
         episode_crash = [0]  # sum of crashes for all agents
-        final_ep_crash = []  # sum of crashes for training curve
+        ep_crash = []  # sum of crashes for training curve
         agent_info = [[[]]]  # placeholder for benchmarking info
-
+        
+        display_formation_err = [[] for _ in range(env.n)]
         obs_n = env.reset()
         t_start = time.time()
         final_reward_prev = None
@@ -261,142 +279,156 @@ def train(arglist):
                 # get action
                 if arglist.good_policy == "maddpg":
                     action_n = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
-                elif arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
-                    action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_rewards)) for obs in range(len(obs_n))]
+                elif "ddpg" in arglist.good_policy or arglist.good_policy == "cddpg":
+                    action_n = [trainers[obs if obs == 0 else -1].action(obs_n[obs], len(episode_formation_err)) for obs in range(len(obs_n))]
                     constraint_n = [trainers[obs if obs == 0 else -1].constraint(obs_n[obs]) for obs in range(len(obs_n))]
                 # environment step
-                new_obs_n, rew_n, done_n, info_n, crash_n = env.step(action_n)
+                new_obs_n, formation_rew_n, avoidance_rew_n, done_n, info_n, crash_n = env.step(action_n)
                 episode_step[-1] += 1
                 done = all(done_n)
-                terminal = (episode_step[-1] >= arglist.max_episode_len)
                 # collect experience
-                if arglist.good_policy == "ddpg":
-                    for i in range(len(obs_n)):
-                        trainers[i!=0].experience(obs_n[i], action_n[i], rew_n[i] - constraint_n[i][0], new_obs_n[i], done_n[i], terminal)
-                elif arglist.good_policy == "cddpg":
-                    for i in range(len(obs_n)):
-                        trainers[i].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
-                        if i > 0:
-                            trainers[-1].experience(obs_n[i], action_n[i], constraint_n[i], rew_n[i], new_obs_n[i],
-                                                   done_n[i], terminal)
-                else:
-                    for i, agent in enumerate(trainers):
-                        agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
+                terminal = (episode_step[-1] >= arglist.max_episode_len)
+
+                if state == '_train':
+                    if "ddpg" in arglist.good_policy:
+                        for i in range(len(obs_n)):
+                            trainers[i!=0].experience(obs_n[i], action_n[i], formation_rew_n[i] + avoidance_rew_n[i], new_obs_n[i], done_n[i], terminal)
+                    elif arglist.good_policy == "cddpg":
+                        for i in range(len(obs_n)):
+                            trainers[i].experience(obs_n[i], action_n[i], constraint_n[i], formation_rew_n[i] + avoidance_rew_n[i], new_obs_n[i], done_n[i], terminal)
+                            if i > 0:
+                                trainers[-1].experience(obs_n[i], action_n[i], constraint_n[i], formation_rew_n[i] + avoidance_rew_n[i], new_obs_n[i], done_n[i], terminal)
+                    else:
+                        for i, agent in enumerate(trainers):
+                            agent.experience(obs_n[i], action_n[i], formation_rew_n[i] + avoidance_rew_n[i], new_obs_n[i], done_n[i], terminal)
+
+                    if "ddpg" in arglist.good_policy or arglist.good_policy == "cddpg":
+                        for i in range(len(obs_n)):
+                            # update all trainers, if not in display or benchmark mode
+                            trainers[i if i == 0 else -1].preupdate()
+                            loss = trainers[i if i == 0 else -1].update(trainers, step)
+                    else:
+                        for agent in trainers:
+                            loss = agent.update(trainers, train_step)
+
                 obs_n = new_obs_n
-                for i, rew in enumerate(rew_n):
+                for i, rew in enumerate(formation_rew_n):
                     # ignore leader reward
                     if i > 0:
-                        episode_rewards[-1] += rew
-                        agent_rewards[i][-1] += rew
+                        episode_formation_err[-1] += rew
+                        agent_formation_err[i][-1] += rew
 
-                for i, con in enumerate(constraint_n):
+                for i, rew in enumerate(avoidance_rew_n):
                     if i > 0:
-                        episode_constraints[-1] += con[0]
-                        agent_constraints[i][-1] += con[0]
+                        episode_avoidance_err[-1] += rew
+                        agent_avoidance_err[i][-1] += rew
+
 
                 for i, crash in enumerate(crash_n):
-                    episode_crash[-1] += crash
+                    if i > 0:
+                        episode_crash[-1] += crash
 
                 for i, done in enumerate(done_n):
-                    episode_done[-1] += done
-
-                if done or terminal:
-                    obs_n = env.reset()
-                    episode_step.append(0)
-                    episode_rewards.append(0)
-                    episode_constraints.append(0)
-                    episode_crash.append(0)
-                    episode_done.append(0)
-                    for a in agent_rewards:
-                        a.append(0)
-                    agent_info.append([[]])
+                    if i > 0:
+                        episode_done[-1] += done
 
             # increment global step counter
-            train_step += 1
-
-            # for benchmarking learned policies
-            if arglist.benchmark:
-                for i, info in enumerate(info_n):
-                    agent_info[-1][i].append(info_n['n'])
-                if train_step > arglist.benchmark_iters and (done or terminal):
-                    file_name = arglist.benchmark_dir + arglist.exp_name + '.pkl'
-                    print('Finished benchmarking, now saving...')
-                    with open(file_name, 'wb') as fp:
-                        pickle.dump(agent_info[:-1], fp)
-                    break
-                continue
+            step += 1
 
             # for displaying learned policies
             if arglist.display:
                 time.sleep(0.01)
                 env.render()
-                '''if train_step == 10:
-                    break'''
+                for i in range(env.n):
+                    display_formation_err[i].append(-formation_rew_n[i])
+                if (done or terminal):
+                    import pprint, pickle
+                    import matplotlib.pyplot as plt
+                    display_formation_err_file_name = arglist.plots_dir + arglist.exp_name + arglist.id + state + '_display_formation_err.pkl'
+                    with open(display_formation_err_file_name, 'wb') as fp:
+                        pickle.dump(display_formation_err, fp)
+                    break
                 continue
 
-            if arglist.good_policy == "ddpg" or arglist.good_policy == "cddpg":
-                for i in range(len(obs_n)):
-                    # update all trainers, if not in display or benchmark mode
-                    trainers[i if i == 0 else -1].preupdate()
-                    loss = trainers[i if i == 0 else -1].update(trainers, train_step)
-            else:
-                for agent in trainers:
-                    loss = agent.update(trainers, train_step)
             # save model, display training output
-            if (done or terminal) and (len(episode_rewards) % arglist.save_rate == 0):
-                final_reward = np.mean(episode_rewards[-arglist.save_rate:])
-                final_constraint = np.mean(episode_constraints[-arglist.save_rate:])
-                final_step = np.mean(episode_step[-arglist.save_rate:])
-                final_crash = np.mean(episode_crash[-arglist.save_rate:])
-                final_done = np.mean(episode_done[-arglist.save_rate:])
+            if (done or terminal) and (len(episode_formation_err) % arglist.save_rate == 0):
+                formation_err = np.mean(episode_formation_err[-arglist.save_rate:])
+                avoidance_err = np.mean(episode_avoidance_err[-arglist.save_rate:])
+                step = np.mean(episode_step[-arglist.save_rate:])
+                crash = np.mean(episode_crash[-arglist.save_rate:])
+                done = np.mean(episode_done[-arglist.save_rate:])
+
                 if not final_reward_prev:
-                    final_reward_prev = final_reward
+                    final_reward_prev = formation_err + avoidance_err
                 else:
+                    final_reward = formation_err + avoidance_err
                     if final_reward > final_reward_prev:
-                        U.save_state(arglist.save_dir, saver=saver)
+                        U.save_state(arglist.save_dir + arglist.id + '.ckpt', saver=saver)
                         final_reward_prev = final_reward
                         print("model saved time: ", time.asctime(time.localtime(time.time())))
                 # print statement depends on whether or not there are adversaries
-                if num_adversaries == 0:
-                    print("steps: {}, episodes: {}, mean episode reward: {}, mean episode step: {},  mean episode crash: {}, time: {}".format(
-                        train_step, len(episode_rewards), final_reward, final_step, final_crash, round(time.time()-t_start, 3)))
-                else:
-                    print("steps: {}, episodes: {}, mean episode reward: {}, agent episode reward: {}, time: {}".format(
-                        train_step, len(episode_rewards), final_reward,
-                        [np.mean(rew[-arglist.save_rate:]) for rew in agent_rewards], round(time.time()-t_start, 3)))
+                print("steps: {}, episodes: {}, mean episode formation error: {}, mean episode avoidance error: {}, mean episode step: {},  mean episode crash: {}, time: {}".format(step, len(episode_formation_err), formation_err, avoidance_err, step, crash, round(time.time()-t_start, 3)))
+                print(action_n)
+
                 t_start = time.time()
                 # Keep track of final episode reward
-                final_ep_rewards.append(final_reward)
-                final_ep_constraints.append(final_constraint)
-                final_ep_steps.append(final_step)
-                final_ep_crash.append(final_crash)
-                final_ep_done.append(final_done)
-                for rew in agent_rewards:
-                    final_ep_ag_rewards.append(np.mean(rew[-arglist.save_rate:]))
-                for con in agent_constraints:
-                    final_ep_ag_constraints.append(np.mean(con[-arglist.save_rate:]))
+                ep_formation_err.append(formation_err)
+                ep_avoidance_err.append(avoidance_err)
+                ep_steps.append(step)
+                ep_crash.append(crash)
+                ep_done.append(done)
+
+                for rew in agent_formation_err:
+                    ep_ag_formation_err.append(np.mean(rew[-arglist.save_rate:]))
+                for rew in agent_avoidance_err:
+                    ep_ag_avoidance_err.append(np.mean(rew[-arglist.save_rate:]))
+
+
+            if done or terminal:
+                obs_n = env.reset()
+                episode_step.append(0)
+                episode_formation_err.append(0)
+                episode_avoidance_err.append(0)
+
+                episode_crash.append(0)
+                episode_done.append(0)
+                for a in agent_formation_err:
+                    a.append(0)
+                for a in agent_avoidance_err:
+                    a.append(0)
+                agent_info.append([[]])
 
             # saves final episode reward for plotting training curve later
-            if len(episode_rewards) > arglist.num_episodes:
-                rew_file_name = arglist.plots_dir + arglist.exp_name + '_rewards.pkl'
-                with open(rew_file_name, 'wb') as fp:
-                    pickle.dump(final_ep_rewards, fp)
-                agrew_file_name = arglist.plots_dir + arglist.exp_name + '_agrewards.pkl'
-                with open(agrew_file_name, 'wb') as fp:
-                    pickle.dump(final_ep_ag_rewards, fp)
-                step_file_name = arglist.plots_dir + arglist.exp_name + '_steps.pkl'
+            if len(episode_formation_err) > arglist.num_episodes:   
+                import pprint, pickle
+                import matplotlib.pyplot as plt
+                formation_err_file_name = arglist.plots_dir + arglist.exp_name + arglist.id + state + '_formation_err.pkl'
+                with open(formation_err_file_name, 'wb') as fp:
+                    pickle.dump(ep_formation_err, fp)
+                agformation_err_file_name = arglist.plots_dir + arglist.exp_name + arglist.id + state + '_agformation_err.pkl'
+                with open(agformation_err_file_name, 'wb') as fp:
+                    pickle.dump(ep_ag_formation_err, fp)
+                avoidance_err_file_name = arglist.plots_dir + arglist.exp_name + arglist.id + state + '_avoidance_err.pkl'
+                with open(avoidance_err_file_name, 'wb') as fp:
+                    pickle.dump(ep_avoidance_err, fp)
+                agavoidance_err_file_name = arglist.plots_dir + arglist.exp_name + arglist.id + state + '_agavoidance_err.pkl'
+                with open(agavoidance_err_file_name, 'wb') as fp:
+                    pickle.dump(ep_ag_avoidance_err, fp)
+                step_file_name = arglist.plots_dir + arglist.exp_name + arglist.id + state + '_steps.pkl'
                 with open(step_file_name, 'wb') as fp:
-                    pickle.dump(final_ep_steps, fp)
-                crash_file_name = arglist.plots_dir + arglist.exp_name + '_crashes.pkl'
+                    pickle.dump(ep_steps, fp)
+                crash_file_name = arglist.plots_dir + arglist.exp_name + arglist.id + state + '_crashes.pkl'
                 with open(crash_file_name, 'wb') as fp:
-                    pickle.dump(final_ep_crash, fp)
-                done_file_name = arglist.plots_dir + arglist.exp_name + '_done.pkl'
+                    pickle.dump(ep_crash, fp)
+                done_file_name = arglist.plots_dir + arglist.exp_name + arglist.id + state + '_done.pkl'
                 with open(done_file_name, 'wb') as fp:
-                    pickle.dump(final_ep_done, fp)
-                print('...Finished total of {} episodes.'.format(len(episode_rewards)))
+                    pickle.dump(ep_done, fp)
+                print('...Finished total of {} episodes.'.format(len(episode_formation_err)))
                 break
 
 if __name__ == '__main__':
+    import pprint, pickle
+    import matplotlib.pyplot as plt
     arglist = parse_args()
     train(arglist)
     '''graph = tf.get_default_graph()
@@ -407,22 +439,93 @@ if __name__ == '__main__':
     converter = tf.lite.TFLiteConverter.from_saved_model("/home/shinyochiu/maddpg/policy/graph.pb")
     tflite_model = converter.convert()
     open("converted_model.tflite", "wb").write(tflite_model)'''
+    '''
+    rew1_file_name = arglist.plots_dir + arglist.exp_name + '1' + '_eval_display_formation_err.pkl'
+    rew1_file = open(rew1_file_name, 'rb')
+    rew2_file_name = arglist.plots_dir + arglist.exp_name + '2' + '_eval_display_formation_err.pkl'
+    rew2_file = open(rew2_file_name, 'rb')
+    rew3_file_name = arglist.plots_dir + arglist.exp_name + '4' + '_eval_display_formation_err.pkl'
+    rew3_file = open(rew3_file_name, 'rb')
 
-    '''import pprint, pickle
-    import matplotlib.pyplot as plt
-    rew1_file_name = arglist.plots_dir + arglist.exp_name + '_rewards_formation_navigation_1.pkl'
-    pkl_file1 = open(rew1_file_name, 'rb')
-    rew2_file_name = arglist.plots_dir + arglist.exp_name + '_rewards_formation_navigation_5.pkl'
-    pkl_file2 = open(rew2_file_name, 'rb')
-    step_file_name = arglist.plots_dir + arglist.exp_name + '_steps_formation_navigation_5.pkl'
-    pkl_file5 = open(step_file_name, 'rb')
-    rew1 = pickle.load(pkl_file1)
-    rew2 = pickle.load(pkl_file2)
-    steps = pickle.load(pkl_file5)
-    print(steps)
-    #plt.plot(rew1[0:len(steps)], label='MADDPG')
-    plt.plot(rew2[0:len(steps)], label='rewards')
-    plt.legend()
-    plt.xlabel('episode (x1000)')
-    plt.ylabel('rewards')
-    plt.show()'''
+    rew1 = np.array(pickle.load(rew1_file))
+    rew2 = np.array(pickle.load(rew2_file))
+    rew3 = np.array(pickle.load(rew3_file))
+    plt.figure(figsize=(10,8))
+    labels = ['$APF$ with $d_{risk}$','$APF$ with $d_{stop}$','Stream-based']
+    for i in range(0,4):
+        plt.subplot(221+i)
+        plt.title('Agent '+str(i+1),fontsize=1)
+        plt.plot(rew1[i+1,0:], '-.', label=labels[0], linewidth=1)
+        plt.plot(rew2[i+1,0:], '--', label=labels[1], linewidth=1)
+        plt.plot(rew3[i+1,0:], '-', label=labels[2], linewidth=1)
+        plt.xlabel('Steps (0.1 sec/step)', fontsize=14)
+        plt.ylabel('tracking errors (m/step)', fontsize=14)
+        plt.xlim(0,2500)
+        plt.ylim(0,3.0)
+    plt.legend(labels=labels, bbox_to_anchor=(-0.15, -0.4), loc="lower center", fontsize=12, ncol = 3)
+    plt.subplots_adjust(hspace=0.3)
+    #plt.show()
+    plt.savefig('eval_curve.eps', format='eps',bbox_inches='tight')
+    
+    
+    
+    
+    step_file_name = arglist.plots_dir + arglist.exp_name + '1' + '_train_steps.pkl'
+    pkl_file0 = open(step_file_name, 'rb')
+    rew1_file_name = arglist.plots_dir + arglist.exp_name + '1' + '_train_formation_err.pkl'
+    rew1_file = open(rew1_file_name, 'rb')
+    crash1_file_name = arglist.plots_dir + arglist.exp_name + '1' + '_train_crashes.pkl'
+    crash1_file = open(crash1_file_name, 'rb')
+    rew2_file_name = arglist.plots_dir + arglist.exp_name + '2' + '_train_formation_err.pkl'
+    rew2_file = open(rew2_file_name, 'rb')
+    crash2_file_name = arglist.plots_dir + arglist.exp_name + '2' + '_train_crashes.pkl'
+    crash2_file = open(crash2_file_name, 'rb')
+    rew3_file_name = arglist.plots_dir + arglist.exp_name + '3' + '_train_formation_err.pkl'
+    rew3_file = open(rew3_file_name, 'rb')
+    crash3_file_name = arglist.plots_dir + arglist.exp_name + '3' + '_train_crashes.pkl'
+    crash3_file = open(crash3_file_name, 'rb')
+    rew4_file_name = arglist.plots_dir + arglist.exp_name + '4' + '_train_formation_err.pkl'
+    rew4_file = open(rew4_file_name, 'rb')
+    crash4_file_name = arglist.plots_dir + arglist.exp_name + '4' + '_train_crashes.pkl'
+    crash4_file = open(crash4_file_name, 'rb')
+    steps = pickle.load(pkl_file0)
+    
+    crash1 = np.array(pickle.load(crash1_file))/10
+    crash2 = np.array(pickle.load(crash2_file))/10
+    crash3 = np.array(pickle.load(crash3_file))/10
+    crash4 = np.array(pickle.load(crash4_file))/10
+
+    rew1 = -np.array(pickle.load(rew1_file))/1000
+    rew2 = -np.array(pickle.load(rew2_file))/1000
+    rew3 = -np.array(pickle.load(rew3_file))/1000
+    rew4 = -np.array(pickle.load(rew4_file))/1000
+    x = [i for i in range(6,len(steps))]
+    xticks = [6, 10, 15, 20, 25, len(steps)-1]
+    plt.figure(figsize=(15,5))
+    plt.subplot(121)
+    plt.title('Tracking error',fontsize=16)
+    plt.plot(x,rew1[6:30], 'x--', label='$APF$ with $d_{risk}$')
+    plt.plot(x,rew2[6:30], '+--', label='$APF$ with $d_{stop}$')
+    plt.plot(x,rew3[6:30], 'r*--', label='Chao Wang, et al.')
+    plt.plot(x,rew4[6:30], 'g-', label='Stream-based')
+    #plt.plot(x,rew4[5:], label='our method, $d_{safe,1}=0.7m, d_{safe,2}=0.4m$')
+    plt.legend(fontsize=14)
+    plt.xlabel('Episode (x1000)', fontsize=16)
+    plt.ylabel('Average tracking errors (m/s)', fontsize=16)
+    plt.xlim(6,len(steps)-1)
+    plt.xticks(xticks)
+    plt.subplot(122)
+    plt.title('Collision rate',fontsize=16)
+    plt.plot(x,crash1[6:30], 'x--', label='$APF$ with $d_{risk}$')
+    plt.plot(x,crash2[6:30], '+--', label='$APF$ with $d_{stop}$')
+    plt.plot(x,crash3[6:30], 'r*--', label='Chao Wang, et al.')
+    plt.plot(x,crash4[6:30], 'g-', label='Stream-based')
+    #plt.plot(x,crash4[5:len(steps)], label='our method, $d_{safe,1}=0.7m, d_{safe,2}=0.4m$')
+    plt.legend(fontsize=14)
+    plt.xlabel('Episode (x1000)', fontsize=16)
+    plt.ylabel('Average collision (%/s)', fontsize=16)
+    plt.xlim(6,len(steps)-1)
+    plt.xticks(xticks)
+    #plt.show()
+    plt.savefig('train_curve.eps', format='eps',bbox_inches='tight')
+    '''

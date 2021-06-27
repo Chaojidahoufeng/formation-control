@@ -49,7 +49,7 @@ class MultiAgentEnv(gym.Env):
             if self.discrete_action_space:
                 u_action_space = spaces.Discrete(3) # foward, left right steer
             else:
-                u_action_space = spaces.Box(low=-agent.u_range, high=+agent.u_range, shape=(world.dim_p,), dtype=np.float32)
+                u_action_space = spaces.Box(low=0, high=+agent.u_range, shape=(3,), dtype=np.float32)
             if agent.movable:
                 total_action_space.append(u_action_space)
             # communication action space
@@ -87,7 +87,8 @@ class MultiAgentEnv(gym.Env):
 
     def step(self, action_n, constraint_n=None):
         obs_n = []
-        reward_n = []
+        formation_reward_n = []
+        avoidance_reward_n = []
         done_n = []
         info_n = {'n': []}
         crash_n = []
@@ -103,17 +104,19 @@ class MultiAgentEnv(gym.Env):
         # record observation for each agent
         for agent in self.agents:
             obs_n.append(self._get_obs(agent))
-            reward_n.append(self._get_reward(agent))
+            formation_rew, avoidance_rew = self._get_reward(agent)
+            formation_reward_n.append(formation_rew)
+            avoidance_reward_n.append(avoidance_rew)
             done_n.append(self._get_done(agent))
             info_n['n'].append(self._get_info(agent))
             crash_n.append(agent.crash)
-
+        '''
         # all agents get total reward in cooperative case
         reward = np.sum(reward_n)
         if self.shared_reward:
             reward_n = [reward] * self.n
-
-        return obs_n, reward_n, done_n, info_n, crash_n
+        '''
+        return obs_n, formation_reward_n, avoidance_reward_n,  done_n, info_n, crash_n
 
     def reset(self):
         # reset world
@@ -156,7 +159,7 @@ class MultiAgentEnv(gym.Env):
     def _set_action(self, action, agent, action_space, time=None):
         agent.action.u = np.zeros(self.world.dim_p)
         agent.action.c = np.zeros(self.world.dim_c)
-        agent.action.u[1] = 0.2
+        agent.action.u[1] = 0.
         agent.agents_ctr_prev = agent.agents_ctr # record previous state
         # process action
         if isinstance(action_space, MultiDiscrete):
@@ -184,15 +187,16 @@ class MultiAgentEnv(gym.Env):
                 if action[0] == 3: agent.action.u[1] = -1.0
                 if action[0] == 4: agent.action.u[1] = +1.0
             else:
-                if self.discrete_action_space:
-                    if agent.leader:
-                        agent.action.u[0] += 0.3*(action[0][0] - action[0][1])  # omega
-                        agent.action.u[1] += 0.15*(action[0][2])
-                    else:
-                        agent.action.u[0] += action[0][0] - action[0][1]  # omega
-                        agent.action.u[1] += 0.3 * (action[0][2])
+                if agent.leader:
+                    agent.action.u[0] += 0.3*(action[0][0] - action[0][1])  # omega
+                    #agent.action.u[0] += 0.3*(action[0][0])  # omega
+                    agent.action.u[1] += 0.35*(action[0][2])
+                    #agent.action.u[1] += 0.35*(action[0][1])
                 else:
-                    agent.action.u = action[0]
+                    agent.action.u[0] += action[0][0] - action[0][1]  # omega
+                    #agent.action.u[0] += action[0][0]  # omega
+                    agent.action.u[1] += 0.5 * (action[0][2])
+                    #agent.action.u[1] += 0.5 * (action[0][1])
             #print(agent.action.u)
             sensitivity = 5.0
             if agent.accel is not None:
@@ -272,7 +276,7 @@ class MultiAgentEnv(gym.Env):
                 else:
                     geom = rendering.make_circle(entity.size)
             else:
-                geom = rendering.make_square(entity.size, angle=entity.state.p_ang+np.pi / 4)
+                geom = rendering.make_circle(entity.size)
             geom.set_color(*entity.color)
             xform = rendering.Transform()
             geom.add_attr(xform)
@@ -340,17 +344,33 @@ class MultiAgentEnv(gym.Env):
 
             # add head to agents
             for e, agent in enumerate(self.agents):
-                for j, r in enumerate(agent.ray):
-                    # 105 for compensating square's rendering error
-                    ray_pos = 105*r[0]*np.array([np.cos(r[1]+agent.state.p_ang), np.sin(r[1]+agent.state.p_ang)])
-                    ray = rendering.make_line(agent.state.p_pos, agent.state.p_pos+ray_pos)
-                    ray_xform = rendering.Transform()
-                    if 100*r[0] < 200:
-                        ray.set_color(1., 0., 0.)
-                    else:
-                        ray.set_color(0.9, 0.9, 0.9)
-                    ray.add_attr(ray_xform)
-                    self.viewers[i].add_geom(ray)
+                if e > 0:
+                    for j in range(agent.start_ray[0], agent.end_ray[0] + 1):
+                        # 105 for compensating square's rendering error
+                        if 100 * agent.ray[j][0] < 200:
+                            ray_pos = 105 * agent.ray[j][0] * np.array(
+                                [np.cos(agent.ray[j][1] + agent.state.p_ang), np.sin(agent.ray[j][1] + agent.state.p_ang)])
+                            ray = rendering.make_line(agent.state.p_pos, agent.state.p_pos + ray_pos)
+                            ray.set_color(1., 0., 0.)
+                            ray_xform = rendering.Transform()
+                            ray.add_attr(ray_xform)
+                            self.viewers[i].add_geom(ray)
+                    for j in range(agent.start_ray[1], agent.end_ray[1] + 1):
+                        # 105 for compensating square's rendering error
+                        if 100 * agent.ray[j][0] < 200:
+                            ray_pos = 105 * agent.ray[j][0] * np.array(
+                                [np.cos(agent.ray[j][1] + agent.state.p_ang), np.sin(agent.ray[j][1] + agent.state.p_ang)])
+                            ray = rendering.make_line(agent.state.p_pos, agent.state.p_pos + ray_pos)
+                            ray.set_color(1., 0., 0.)
+                            ray_xform = rendering.Transform()
+                            ray.add_attr(ray_xform)
+                            self.viewers[i].add_geom(ray)
+                    err = rendering.make_text(text='error of agent %d = %f meters' % (e, np.linalg.norm(agent.err)), font_size=15,
+                                              x=self.world.agents[0].state.p_pos[0] - WINDOW_W // 1.5,
+                                              y=self.world.agents[0].state.p_pos[1] - WINDOW_H // 2.0 - 20 * (e + 1),
+                                              anchor_x='left',
+                                              color=(0, 0, 0, 255))
+                    self.viewers[i].add_label(err)
                 head = rendering.make_circle(agent.size / 8)
                 head_xform = rendering.Transform()
                 head.set_color(0.0, .0, 1.0)
@@ -360,13 +380,7 @@ class MultiAgentEnv(gym.Env):
                 self.viewers[i].add_geom(head)
                 label = rendering.make_text(text='%d' % e, font_size=12, x=agent.state.p_pos[0], y=agent.state.p_pos[1], color=(0, 0, 0, 255))
                 self.viewers[i].add_label(label)
-                if e > 0:
-                    err = rendering.make_text(text='error of agent %d = %f meters' % (e, np.linalg.norm(agent.err)), font_size=15,
-                                              x=self.world.agents[0].state.p_pos[0] - WINDOW_W // 1.5,
-                                              y=self.world.agents[0].state.p_pos[1] - WINDOW_H // 2.0 - 20 * (e + 1),
-                                              anchor_x='left',
-                                              color=(0, 0, 0, 255))
-                    self.viewers[i].add_label(err)
+                    
             time = rendering.make_text(text='time = %f sec' % self.world.time, font_size=15,
                                            x=self.world.agents[0].state.p_pos[0] - WINDOW_W // 1.5,
                                            y=self.world.agents[0].state.p_pos[1] - WINDOW_H // 2.0,

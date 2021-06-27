@@ -50,7 +50,7 @@ class Entity(object):
         # state
         self.state = EntityState()
         # mass
-        self.initial_mass = 0.012
+        self.initial_mass = 5
 
     @property
     def mass(self):
@@ -65,6 +65,7 @@ class Landmark(Entity):
 class Static_obs(Entity):
     def __init__(self):
         super(Static_obs, self).__init__()
+        self.initial_mass = 50
 
 class Dynamic_obs(Entity):
     def __init__(self):
@@ -109,6 +110,7 @@ class World(object):
         self.agents = []
         self.landmarks = []
         self.static_obs = []
+        self.dynamic_obs = []
         # communication channel dimensionality
         self.dim_c = 0
         # position dimensionality
@@ -120,8 +122,8 @@ class World(object):
         # physical damping
         self.damping = 0.25
         # contact response parameters
-        self.contact_force = 5e-3
-        self.contact_margin = 1e-10
+        self.contact_force = 1
+        self.contact_margin = 0.05
         # arguments for goal tracking
         self.path = []
         self.start = []
@@ -151,25 +153,35 @@ class World(object):
     # update state of the world
     def step(self):
         self.time += self.dt
-
+        #np.random.seed(int(self.time*10))
         dis = np.linalg.norm(self.agents[0].state.p_vel)*self.dt
         #self.landmarks[0].state.p_pos[0] += dis_x
         #self.landmarks[0].state.p_pos[1] += dis_y
         self.distance += dis / 100  # transfer to meter
         for obs in self.static_obs:
-            if abs(self.agents[0].state.p_pos[0] - obs.state.p_pos[0]) >= 700:
-                obs.state.p_pos[0] += np.sign(self.agents[0].state.p_pos[0] - obs.state.p_pos[0])*1200
-                obs.state.p_pos[1] = self.agents[0].state.p_pos[1] + 50 * np.random.randint(-10, 10)
-            elif abs(self.agents[0].state.p_pos[1] - obs.state.p_pos[1]) >= 700:
-                obs.state.p_pos[0] = self.agents[0].state.p_pos[0] + 50 * np.random.randint(-10, 10)
+            if abs(self.agents[0].state.p_pos[0] - obs.state.p_pos[0]) >= 600:
+                obs.state.p_pos[0] += np.sign(self.agents[0].state.p_pos[0] - obs.state.p_pos[0])*1200#np.random.uniform(1200, 1500)
+                obs.state.p_pos[1] = self.agents[0].state.p_pos[1] + 45 * np.random.randint(-10, 10) # training 45, testing 60
+                obs.size = np.random.uniform(10.0, 50.0)
+            elif abs(self.agents[0].state.p_pos[1] - obs.state.p_pos[1]) >= 600:
+                obs.state.p_pos[0] = self.agents[0].state.p_pos[0] + 45 * np.random.randint(-10, 10)
+                obs.state.p_pos[1] += np.sign(self.agents[0].state.p_pos[1] - obs.state.p_pos[1])*1200#np.random.uniform(1200, 1500)
+                obs.size = np.random.uniform(10.0, 50.0)
+
+        for obs in self.dynamic_obs:
+            obs.state.p_pos += obs.action.u
+            if abs(self.agents[0].state.p_pos[0] - obs.state.p_pos[0]) >= 500:
+                obs.action.u[0] *= -1
+            if abs(self.agents[0].state.p_pos[1] - obs.state.p_pos[1]) >= 700:
                 obs.state.p_pos[1] += np.sign(self.agents[0].state.p_pos[1] - obs.state.p_pos[1])*1200
+
         for agent in self.agents:
             if not agent.leader:
                 agent.err_prev = agent.err
                 #agent.err = np.linalg.norm(agent.p_des-agent.p_rel)
                 agent.err = agent.p_des - agent.p_rel
 
-
+        #np.random.seed()
         # set actions for scripted agents 
         for agent in self.scripted_agents:
             agent.action = agent.action_callback(agent, self)
@@ -190,9 +202,11 @@ class World(object):
         # set applied forces
         for i,agent in enumerate(self.agents):
             if agent.movable:
-                noise = np.random.randn(*agent.action.u.shape) * agent.u_noise if agent.u_noise else 0.0
+                if any(agent.action.u):
+                    noise = np.random.randn(*agent.action.u.shape) * agent.u_noise if agent.u_noise else 0.0
+                else:
+                    noise = 0.0
                 p_force[i] = agent.action.u + noise
-
         return p_force
 
     # gather physical forces acting on entities
@@ -203,11 +217,24 @@ class World(object):
                 if(b <= a): continue
                 [f_a, f_b] = self.get_collision_force(entity_a, entity_b)
                 if(f_a is not None):
-                    if(p_force[a] is None): p_force[a] = 0.0
-                    p_force[a] = f_a + p_force[a]
+                    if(p_force[a] is None): p_force[a] = np.zeros(self.dim_p)
+                    force = f_a / entity_a.mass*self.dt
+                    p_speed = - np.sign(p_force[a][1]) * np.linalg.norm(force)
+                    if p_speed != 0.0:
+                        p_angle = np.arctan2(force[1],force[0])
+                    else:
+                        p_angle = 0.0
+                    p_force[a] = np.array([p_angle, p_speed]) + p_force[a]
+
                 if(f_b is not None):
-                    if(p_force[b] is None): p_force[b] = 0.0
-                    p_force[b] = f_b + p_force[b]
+                    if(p_force[b] is None): p_force[b] = np.zeros(self.dim_p)
+                    force = f_b / entity_a.mass * self.dt
+                    p_speed = - np.sign(p_force[b][1]) * np.linalg.norm(force)
+                    if p_speed != 0.0:
+                        p_angle = np.arctan2(force[1], force[0])
+                    else:
+                        p_angle = 0.0
+                    p_force[b] = np.array([p_angle, p_speed]) + p_force[b]
         return p_force
 
     # integrate physical state
@@ -221,21 +248,36 @@ class World(object):
             if (p_force[i] is not None):
                 #entity.state.p_vel += (p_force[i] / entity.mass) * self.dt
                 # 20190717 modify the control of agents
-                entity.state.p_omg = np.pi*p_force[i][0] / (800*entity.mass)
-                entity.state.p_vel[0] += (p_force[i][1] * np.cos(entity.state.p_ang) / entity.mass) * self.dt
-                entity.state.p_vel[1] += (p_force[i][1] * np.sin(entity.state.p_ang) / entity.mass) * self.dt
+                # entity.state.p_omg = np.pi*p_force[i][0] / (800*entity.mass)
+                # entity.state.p_vel[0] += (p_force[i][1] * np.cos(entity.state.p_ang) / entity.mass) * self.dt
+                # entity.state.p_vel[1] += (p_force[i][1] * np.sin(entity.state.p_ang) / entity.mass) * self.dt
+                entity.state.p_omg = p_force[i][0]
+                entity.state.p_vel[0] = 100*(p_force[i][1] * np.cos(entity.state.p_ang))
+                entity.state.p_vel[1] = 100*(p_force[i][1] * np.sin(entity.state.p_ang))
                 #print(entity.state.p_vel[0])
+            speed = 0
             if entity.max_speed is not None:
-                speed = np.sqrt(np.square(entity.state.p_vel[0]) + np.square(entity.state.p_vel[1]))
+                speed = np.linalg.norm(entity.state.p_vel)
                 if speed > entity.max_speed:
-                    entity.state.p_vel = entity.state.p_vel / np.sqrt(np.square(entity.state.p_vel[0]) +
-                                                                  np.square(entity.state.p_vel[1])) * entity.max_speed
+                    entity.state.p_vel = entity.state.p_vel / np.linalg.norm(entity.state.p_vel) * entity.max_speed
             entity.state.p_pos_prev = entity.state.p_pos
             entity.state.p_ang_prev = entity.state.p_ang
-            entity.state.p_pos += entity.state.p_vel * self.dt
-            entity.state.p_ang -= entity.state.p_omg * self.dt
+
+            if abs(entity.state.p_omg) > 1e-6:
+                entity.state.p_pos[1] += speed / entity.state.p_omg * (
+                            np.cos(entity.state.p_ang) - np.cos(entity.state.p_ang + self.dt * entity.state.p_omg))
+                entity.state.p_pos[0] += speed / entity.state.p_omg * (
+                            np.sin(entity.state.p_ang + self.dt * entity.state.p_omg) - np.sin(entity.state.p_ang))
+                entity.state.p_ang -= entity.state.p_omg * self.dt
+            else:
+                entity.state.p_pos[1] += speed * np.sin(entity.state.p_ang) * self.dt
+                entity.state.p_pos[0] += speed * np.cos(entity.state.p_ang) * self.dt
+
+            #print(entity.name, speed * np.cos(entity.state.p_ang), speed * np.sin(entity.state.p_ang))
+            # entity.state.p_pos += entity.state.p_vel * self.dt
+            # entity.state.p_ang -= entity.state.p_omg * self.dt
             if abs(entity.state.p_ang) >= np.pi:
-                entity.state.p_ang -= np.sign(entity.state.p_ang) *2 * np.pi
+                entity.state.p_ang -= np.sign(entity.state.p_ang) * 2 * np.pi
 
     def update_agent_state(self, agent):
         # set communication state (directly for now)
@@ -253,19 +295,18 @@ class World(object):
         if (entity_a is entity_b):
             return [None, None] # don't collide against itself
         # compute actual distance between entities
-        delta_pos = entity_a.state.p_pos - entity_b.state.p_pos
+        delta_pos = (entity_a.state.p_pos - entity_b.state.p_pos)/100
         if (entity_a.state.p_pos[0] - entity_b.state.p_pos[0]) != 0:
             ang = math.atan((entity_a.state.p_pos[1] - entity_b.state.p_pos[1])/(entity_a.state.p_pos[0] - entity_b.state.p_pos[0]))
         else:
             ang = np.pi/2
-        dist = np.linalg.norm(delta_pos)
+        dist = np.linalg.norm(delta_pos) - entity_a.size/100 - entity_b.size/100
         # minimum allowable distance
-        dist_min = (entity_a.size + entity_b.size)*math.cos(abs(ang)-np.pi/4)
+        dist_min = (entity_a.size + entity_b.size)*math.cos(abs(ang)-np.pi/4)/100
         # softmax penetration
         k = self.contact_margin
         penetration = np.logaddexp(0, -(dist - dist_min + 0.001)/k)*k
 
-        #print(penetration)
         '''force = self.contact_force * delta_pos / dist * penetration
 
         force_a = +force if entity_a.movable else None
@@ -281,11 +322,15 @@ class World(object):
             force_a = self.contact_force * entity_a.mass * -abs(entity_a.state.p_vel) * penetration / self.dt
         elif entity_b.movable and not entity_a.movable:
             force_b = self.contact_force * entity_b.mass * -abs(entity_b.state.p_vel) * penetration / self.dt'''
-        force_a = self.contact_force * -(((
-                                                     mass_a - mass_b) * abs(entity_a.state.p_vel) + 2 * mass_b * abs(entity_b.state.p_vel)) / (
-                                                    mass_a + mass_b)) * penetration / self.dt if entity_a.movable else None
-        force_b = self.contact_force * -(((
-                                                     mass_b - mass_a) * abs(entity_b.state.p_vel) + 2 * mass_a * abs(entity_a.state.p_vel)) / (
-                                                    mass_b + mass_a)) * penetration / self.dt if entity_b.movable else None
+        force_a = np.zeros(self.dim_p)
+        force_b = np.zeros(self.dim_p)
+
+        if dist < 0 or abs(dist) < self.contact_margin:
+            force_a = self.contact_force * -(((
+                                                         mass_a - mass_b) * abs(entity_a.state.p_vel/100) + 2 * mass_b * abs(entity_b.state.p_vel/100)) / (
+                                                        mass_a + mass_b)) / self.dt if entity_a.movable else None
+            force_b = self.contact_force * -(((
+                                                         mass_b - mass_a) * abs(entity_b.state.p_vel/100) + 2 * mass_a * abs(entity_a.state.p_vel/100)) / (
+                                                        mass_b + mass_a)) / self.dt if entity_b.movable else None
         #print([force_a, force_b])
         return [force_a, force_b]

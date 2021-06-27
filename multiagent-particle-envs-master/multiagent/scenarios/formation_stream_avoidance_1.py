@@ -38,17 +38,17 @@ class Scenario(BaseScenario):
             agent.ray = np.zeros((num_agent_ray, 2))  # num_agent_ray*[dis, ang, type]
             agent.ang_range = [180/num_agent_ray*(i + 0.5) * np.pi / 180 for i in range(num_agent_ray//2)] + [-180/num_agent_ray*(i + 0.5) * np.pi / 180 for i in range(num_agent_ray//2)]
             # for stream function based avoidance
-            agent.avoiding = np.array([False, False])
-            agent.U = np.array([0., 0.])
-            agent.start_ray = np.array([-1, -1])
-            agent.end_ray = np.array([-1, -1])
-            agent.min_ray = np.array([0, len(agent.ray)//2])
-            agent.obs_r = np.array([0., 0.])
-            agent.obs_dis = np.array([2.0, 2.0])
-            agent.obs_ang = np.array([0., 0.])
-            agent.C = np.array([0., 0.])
-            agent.C_bound = np.array([0., 0.])
-            agent.stream_err = np.array([0., 0.])
+            agent.avoiding = [False, False]
+            agent.U = [0., 0.]
+            agent.start_ray = [-1, -1]
+            agent.end_ray = [-1, -1]
+            agent.min_ray = [0, len(agent.ray)//2]
+            agent.obs_r = [0., 0.]
+            agent.obs_dis = [2.0, 2.0]
+            agent.obs_ang = [0., 0.]
+            agent.C = [0., 0.]
+            agent.C_bound = [0., 0.]
+            agent.stream_err = [0., 0.]
 
         world.static_obs = [Static_obs() for _ in range(num_static_obs)]
         for i, static_obs in enumerate(world.static_obs):
@@ -277,7 +277,6 @@ class Scenario(BaseScenario):
 
     def get_virtual_obstacle_pos(self, ray, obs_r):
         left_start, left_end, left_min, right_start, right_end, right_min = -1, -1, 0, -1, -1, len(ray)//2
-
         x = [0., 0.]
         y = [0., 0.]
         left_avoid, right_avoid = False, False
@@ -347,39 +346,40 @@ class Scenario(BaseScenario):
 
                 # if obstacle is not convex, return results according to start and end points
                 if x_m[i] == x_s[i] or x_m[i] == x_e[i] or x_e[i] == x_s[i] or y_m[i] == y_s[i] or y_m[i] == y_e[i] or y_e[i] == y_s[i] or d_m[i] == d_e[i] or d_m[i] == d_s[i] or d_s[i] == d_e[i]:
-                    if obs_r[i] == 0.:
-                        obs_r[i] = np.clip(norm([x_s[i]-x_e[i], y_s[i]-y_e[i]]), 0.1, 5)
+                    if not obs_r[i]:
+                        obs_r[i] = np.clip(norm([x_s[i]-x_e[i], y_s[i]-y_e[i]]), 1, 5)
                     
                     x[i] = - x_m[i]
                     y[i] = - y_m[i]
                     
                 else:
-                    if obs_r[i] == 0.:
-                        obs_r[i] = np.clip(norm([x_s[i]-x_e[i], y_s[i]-y_e[i]])/abs(2*np.sin(theta_a[i])), 0.1, 5)
-
-                    # if i == 0:
-                    #     x[i] = - np.clip(
-                    #         ((y_s[i] - y_m[i]) * (np.square(d_m[i]) - np.square(d_e[i])) - (y_m[i] - y_e[i]) * (
-                    #                 np.square(d_s[i]) - np.square(d_m[i]))) / (2 * (
-                    #                 (x_m[i] - x_e[i]) * (y_s[i] - y_m[i]) - (x_s[i] - x_m[i]) * (y_m[i] - y_e[i]))), x_m[0] + obs_r[0], detect_range + obs_r[0])
-                    #     y[i] = - np.clip(((x_s[i] - x_m[i]) * (np.square(d_m[i]) - np.square(d_e[i])) - (x_m[i] - x_e[i]) * (
-                    #                 np.square(d_s[i]) - np.square(d_m[i]))) / (2 * (
-                    #                 (x_s[i] - x_m[i]) * (y_m[i] - y_e[i]) - (x_m[i] - x_e[i]) * (y_s[i] - y_m[i]))), y_m[0] + obs_r[0], detect_range + obs_r[0])
-                    # else:
-                    #     x[i] = - np.clip(
-                    #         ((y_s[i] - y_m[i]) * (np.square(d_m[i]) - np.square(d_e[i])) - (y_m[i] - y_e[i]) * (
-                    #                 np.square(d_s[i]) - np.square(d_m[i]))) / (2 * (
-                    #                 (x_m[i] - x_e[i]) * (y_s[i] - y_m[i]) - (x_s[i] - x_m[i]) * (y_m[i] - y_e[i]))), x_m[1] + obs_r[1], detect_range + obs_r[1])
-                    #     y[i] = - np.clip(((x_s[i] - x_m[i]) * (np.square(d_m[i]) - np.square(d_e[i])) - (
-                    #                 x_m[i] - x_e[i]) * (np.square(d_s[i]) - np.square(d_m[i]))) / (2 * (
-                    #                 (x_s[i] - x_m[i]) * (y_m[i] - y_e[i]) - (x_m[i] - x_e[i]) * (y_s[i] - y_m[i]))), - detect_range - obs_r[1],  y_m[1] - obs_r[1])
-
+                    if not obs_r[i]:
+                        obs_r[i] = np.clip(norm([x_s[i]-x_e[i], y_s[i]-y_e[i]])/abs(2*np.sin(theta_a[i])), 1, 5)
+                    '''
+                    if i == 0:
+                        x[i] = - np.clip(
+                            ((y_s[i] - y_m[i]) * (np.square(d_m[i]) - np.square(d_e[i])) - (y_m[i] - y_e[i]) * (
+                                    np.square(d_s[i]) - np.square(d_m[i]))) / (2 * (
+                                    (x_m[i] - x_e[i]) * (y_s[i] - y_m[i]) - (x_s[i] - x_m[i]) * (y_m[i] - y_e[i]))), x_m[0] + obs_r[0], detect_range + obs_r[0])
+                        y[i] = - np.clip(((x_s[i] - x_m[i]) * (np.square(d_m[i]) - np.square(d_e[i])) - (x_m[i] - x_e[i]) * (
+                                    np.square(d_s[i]) - np.square(d_m[i]))) / (2 * (
+                                    (x_s[i] - x_m[i]) * (y_m[i] - y_e[i]) - (x_m[i] - x_e[i]) * (y_s[i] - y_m[i]))), y_m[0] + obs_r[0], detect_range + obs_r[0])
+                    else:
+                        x[i] = - np.clip(
+                            ((y_s[i] - y_m[i]) * (np.square(d_m[i]) - np.square(d_e[i])) - (y_m[i] - y_e[i]) * (
+                                    np.square(d_s[i]) - np.square(d_m[i]))) / (2 * (
+                                    (x_m[i] - x_e[i]) * (y_s[i] - y_m[i]) - (x_s[i] - x_m[i]) * (y_m[i] - y_e[i]))), x_m[1] + obs_r[1], detect_range + obs_r[1])
+                        y[i] = - np.clip(((x_s[i] - x_m[i]) * (np.square(d_m[i]) - np.square(d_e[i])) - (
+                                    x_m[i] - x_e[i]) * (np.square(d_s[i]) - np.square(d_m[i]))) / (2 * (
+                                    (x_s[i] - x_m[i]) * (y_m[i] - y_e[i]) - (x_m[i] - x_e[i]) * (y_s[i] - y_m[i]))), - detect_range - obs_r[1],  y_m[1] - obs_r[1])
+                    '''
                     if i == 0:
                         x[i] = -(x_m[i] + obs_r[i] * np.cos(ray[left_min][1]))
                         y[i] = -(y_m[i] + obs_r[i] * np.sin(ray[left_min][1]))
                     else:
                         x[i] = -(x_m[i] + obs_r[i] * np.cos(ray[right_min][1]))
                         y[i] = -(y_m[i] + obs_r[i] * np.sin(ray[right_min][1]))
+
         return x, y, obs_r, avoid, [left_start, right_start], [left_end, right_end], [left_min, right_min]
 
 
@@ -387,15 +387,13 @@ class Scenario(BaseScenario):
         agent.start_ray = [-1, -1]
         agent.end_ray = [-1, -1]
         agent.min_ray = [0, len(agent.ray)//2]
-        err = 0.
+        err = 0
         obs_r = np.copy(agent.obs_r)
         x, y, obs_r, avoid, start_ray, end_ray, min_ray = self.get_virtual_obstacle_pos(agent.ray, obs_r)
-
         # check avoiding state
         if not agent.avoiding[0]:
-            #print("before", obs_r[0], obs_r)
-            agent.obs_r[0] = 0.
             # check if obstacle detected at left side
+            agent.obs_r[0] = 0.
             if avoid[0]:
                 agent.U[0] = 1 # norm(agent.state.p_vel)/100
                 agent.C_bound[0] = - agent.U[0] * (3 * agent.size / 100 + obs_r[0]) * (
@@ -405,9 +403,8 @@ class Scenario(BaseScenario):
                 agent.obs_r[0] = obs_r[0]
 
         if not agent.avoiding[1]:
-            #print("before",obs_r[1], obs_r)
-            agent.obs_r[1] = 0.
             # check if obstacle detected at right side
+            agent.obs_r[1] = 0.
             if avoid[1]:
                 agent.U[1] = 1 # norm(agent.state.p_vel)/100
                 agent.C_bound[1] = agent.U[1] * (3 * agent.size / 100 + obs_r[1]) * (
@@ -425,9 +422,9 @@ class Scenario(BaseScenario):
         obs_ang = np.arctan2(np.array(y), np.array(x))
         for ang in obs_ang:
             ang = self.wrap2pi(ang)
-        #print(x, y, agent.ray[min_ray, 0], obs_dis)
+        
         # choose the shorter side to follow the streamline
-        if agent.avoiding[0] and agent.avoiding[1] and agent.start_ray[0] < 3 and agent.start_ray[1] - len(agent.ray)//2 < 3:
+        if agent.avoiding[0] and agent.avoiding[1] and agent.start_ray[0] < 5 and agent.start_ray[1] - len(agent.ray)//2 < 5:
             if obs_r[0] == 0.:
                 agent.avoiding[0] = False
             if obs_r[1] == 0.:
@@ -436,14 +433,13 @@ class Scenario(BaseScenario):
                 agent.avoiding[0] = False
             elif obs_dis[0] < obs_dis[1]:
                 agent.avoiding[1] = False
-        
+
         # calculate streamline following error
         if agent.avoiding[0]:
-            c = agent.U[0] * y[0] * (1 - np.square(agent.obs_r[0]) / max(np.square(obs_dis[0] + agent.obs_r[0]), np.square(agent.obs_r[0])))
-            #print(c, agent.C[0], agent.C_bound[0])
-            #err += np.sqrt(np.square(c - agent.C[0]))
-            err += np.sqrt(np.square(c - agent.C[0])) * np.clip(1/max(obs_dis[0], agent.size/100) - 1/(5*agent.size/100), 0, None)
-            if start_ray[0] < agent.start_ray[0] or obs_r[0] > agent.obs_r[0]:
+            c = agent.U[0] * y[0] * (1 - np.square(agent.obs_r[0]) / max(np.square(obs_dis[0]+agent.obs_r[0]), np.square(agent.obs_r[0])))
+            err += np.clip((1 / max(obs_dis[0], agent.size / 100) - 1 / (5 * agent.size / 100)), 0, None)
+            #err += 1/c - 1/agent.C[0]
+            if obs_ang[0] < agent.obs_ang[0]:
                 # new obstacle detected
                 agent.U[0] = 1 # norm(agent.state.p_vel)/100
                 agent.C_bound[0] = - agent.U[0] * (3 * agent.size / 100 + obs_r[0]) * (
@@ -454,11 +450,9 @@ class Scenario(BaseScenario):
             agent.obs_ang[0] = obs_ang[0]
 
         if agent.avoiding[1]:
-            c = agent.U[1] * y[1] * (1 - np.square(agent.obs_r[1]) / max(np.square(obs_dis[1] + agent.obs_r[1]), np.square(agent.obs_r[1])))
-            #print(c, agent.C[1], agent.C_bound[1])
-            #err += np.sqrt(np.square(c - agent.C[1]))
-            err += np.sqrt(np.square(c - agent.C[1])) * np.clip(1/max(obs_dis[1], agent.size/100) - 1/(5*agent.size/100), 0, None)
-            if start_ray[1] < agent.start_ray[1] or obs_r[1] > agent.obs_r[1]:
+            c = agent.U[1] * y[1] * (1 - np.square(agent.obs_r[1]) / max(np.square(obs_dis[1]+agent.obs_r[1]), np.square(agent.obs_r[1])))
+            err += np.clip((1 / max(obs_dis[1], agent.size / 100) - 1 / (5 * agent.size / 100)), 0, None)
+            if obs_ang[1] < agent.obs_ang[1]:
                 # new obstacle detected
                 agent.U[1] = 1 # norm(agent.state.p_vel)/100
                 agent.C_bound[1] = agent.U[1] * (3 * agent.size / 100 + obs_r[1]) * (
@@ -480,7 +474,7 @@ class Scenario(BaseScenario):
 
         # step reward
         #rew = -0.3
-        avoidance_rew = 0
+        rew = 0
 
         # parameters for collision reward
         alpha = 1
@@ -505,7 +499,7 @@ class Scenario(BaseScenario):
                 agent.collide = False
         '''
         # min of all ray's detect result
-        min_obs_dis = np.clip(np.min(np.array(agent.obs_dis)), agent.size / 100, None)
+        min_obs_dis = np.min(np.array(agent.obs_dis))
         min_agt_dis = 50 * agent.size / 100
         for entity in agents:
             if entity != agent:
@@ -514,27 +508,28 @@ class Scenario(BaseScenario):
                     min_agt_dis = dis2agt
         #rew -= alpha * math.exp(-beta * min(agt_dis))
         min_dis = min(min_obs_dis, np.min(min_agt_dis))
-        formation_err = -norm(agent.err)
-
+        formation_err = norm(agent.err)
+        '''
         # only when the desire formation position is in front of the agent (0~pi) should it consider the stream line following
-        # if min_dis < 3 * agent.size / 100:
-        #     avoidance_rew -= alpha * (1 / max(min_dis, agent.size / 100) - 1 / (3 * agent.size / 100))
-        # else:
-        #     avoidance_rew -= alpha * agent.stream_err
-
-        # if formation_err < 5 or abs(self.wrap2pi(agent.state.p_ang - world.agents[0].state.p_ang - target_ang)) < np.pi/4:
-        #     avoidance_rew -= alpha * agent.stream_err
-        # else:
-        #     if min_dis < 3 * agent.size / 100:
-        #         avoidance_rew -= alpha * (1 / max(min_dis, agent.size / 100) - 1 / (3 * agent.size / 100))
-
-        avoidance_rew -= alpha * agent.stream_err
+        if abs(self.wrap2pi(agent.state.p_ang - world.agents[0].state.p_ang - target_ang)) > np.pi/4:
+            if min_dis < 1.5 * agent.size / 100:
+                rew -= alpha * (1 / min_dis - 1 / (1.5 * agent.size / 100))
+        else:
+            rew -= alpha * agent.stream_err
+        
+        if formation_err < 5 or abs(self.wrap2pi(agent.state.p_ang - world.agents[0].state.p_ang - target_ang)) < np.pi/4:
+            rew -= alpha * agent.stream_err
+        else:
+            if min_dis < 3 * agent.size / 100:
+                rew -= alpha * (1 / max(min_dis, agent.size / 100) - 1 / (3 * agent.size / 100))
+        '''
+        rew -= alpha * agent.stream_err
         # reward for formation
         c = 1
         #rew -= c*(50*(agent.err - agent.err_prev))
-        #rew -= c*formation_err
+        rew -= c*formation_err
         #print(rew)
-        return formation_err, avoidance_rew
+        return -formation_err, -agent.stream_err
 
     def leader_reward(self, agent, world):
         # Agent are rewarded based on minimum agent distance to landmark
@@ -629,6 +624,7 @@ class Scenario(BaseScenario):
             agent.dis2leader = norm(p_pos - leader[0].state.p_pos) / 100
             agent.ang2leader = self.get_relAngle(leader[0], agent)
             agent.p_rel = agent.dis2leader * np.array([math.cos(agent.ang2leader), math.sin(agent.ang2leader)])
+
         # get distance and relative angle of all entities in this agent's reference frame
         agt_dis = []
         agt_ang = []
