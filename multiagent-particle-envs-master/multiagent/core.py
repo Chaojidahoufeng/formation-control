@@ -213,6 +213,9 @@ class World(object):
     # integrate physical state
     def integrate_state(self, p_force):
         for i,entity in enumerate(self.entities):
+            if i == 0:
+                #print(entity.state.p_vel)
+                print(p_force[i])
             if not entity.movable: continue
             if entity in self.dynamic_obs:
                 entity.state.p_vel = entity.state.p_vel
